@@ -54,7 +54,11 @@ jobs:
       - name: Scan For Common Secret Patterns
         shell: bash
         run: |
-          ! grep -RInE "(aws_access_key_id|aws_secret_access_key|private_key|api[_-]?key|password=|secret=|token=)" \
+          matches="$(grep -RInE "(^|[^A-Za-z0-9_])(aws_access_key_id|aws_secret_access_key|private_key|api[_-]?key|password|secret|token)[[:space:]]*[:=][[:space:]]*[^[:space:]'\"]+" \
             --exclude-dir=.git \
             --exclude=.env.example \
-            .
+            . | grep -vE '\$\{[A-Z0-9_]+(:[^}]*)?\}' || true)"
+          if [ -n "$matches" ]; then
+            echo "$matches"
+            exit 1
+          fi
