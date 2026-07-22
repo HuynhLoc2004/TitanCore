@@ -16,6 +16,12 @@ spring:
         format_sql: false
         jdbc:
           time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    baseline-on-migrate: false
+    clean-disabled: true
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -66,4 +72,3 @@ logging:
     root: INFO
     com.game: INFO
     org.springframework.security: INFO
-
