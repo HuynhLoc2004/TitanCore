@@ -39,9 +39,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle/dependency-check-data
-          key: ${{ runner.os }}-dependency-check-12.2.2-${{ hashFiles('backend/build.gradle', 'backend/settings.gradle', 'backend/gradle/wrapper/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-dependency-check-12.2.2-
+          key: ${{ runner.os }}-dependency-check-12.2.2-v2-${{ hashFiles('backend/build.gradle', 'backend/settings.gradle', 'backend/gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Run OWASP Dependency Check
         env:
