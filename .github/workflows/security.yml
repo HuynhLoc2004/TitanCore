@@ -55,8 +55,10 @@ jobs:
 
           echo "NVD_API_KEY is configured for this step."
           echo "Updating OWASP Dependency Check database..."
+          set +e
           timeout 25m ./gradlew dependencyCheckUpdate --no-daemon
           update_exit_code=$?
+          set -e
           if [ "$update_exit_code" -eq 124 ]; then
             echo "OWASP Dependency Check database update timed out after 25 minutes."
             exit 124
@@ -65,8 +67,10 @@ jobs:
           fi
 
           echo "Analyzing dependencies with OWASP Dependency Check..."
+          set +e
           timeout 25m ./gradlew dependencyCheckAnalyze --no-daemon
           analyze_exit_code=$?
+          set -e
           if [ "$analyze_exit_code" -eq 124 ]; then
             echo "OWASP Dependency Check analysis timed out after 25 minutes."
             exit 124
