@@ -90,6 +90,9 @@ dependencyCheck {
     if (nvdApiKey) {
         nvd {
             apiKey = nvdApiKey
+            delay = 3500
+            maxRetryCount = 3
+            resultsPerPage = 2000
         }
     }
 }
