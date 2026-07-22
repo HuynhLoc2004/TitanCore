@@ -19,7 +19,7 @@ permissions:
 jobs:
   dependency-check:
     name: OWASP Dependency Check
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
