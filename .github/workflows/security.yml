@@ -20,7 +20,7 @@ jobs:
   dependency-check:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: backend
@@ -39,9 +39,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.gradle/dependency-check-data
-          key: ${{ runner.os }}-dependency-check-10.0.4-${{ hashFiles('backend/build.gradle', 'backend/settings.gradle', 'backend/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-dependency-check-12.2.2-${{ hashFiles('backend/build.gradle', 'backend/settings.gradle', 'backend/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
-            ${{ runner.os }}-dependency-check-10.0.4-
+            ${{ runner.os }}-dependency-check-12.2.2-
 
       - name: Run OWASP Dependency Check
         env:

@@ -8,7 +8,7 @@ plugins {
     id "checkstyle"
     id "jacoco"
     id "com.github.spotbugs" version "6.0.26"
-    id "org.owasp.dependencycheck" version "10.0.4"
+    id "org.owasp.dependencycheck" version "12.2.2"
 }
 
 group = "com.game"
@@ -84,7 +84,7 @@ jacocoTestReport {
 
 dependencyCheck {
     failBuildOnCVSS = 7.0
-    suppressionFile = file("config/owasp/suppressions.xml")
+    suppressionFile = "config/owasp/suppressions.xml"
 
     def nvdApiKey = System.getenv("NVD_API_KEY")
     if (nvdApiKey) {
