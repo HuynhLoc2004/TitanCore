@@ -1,0 +1,9 @@
+* @owner
+
+/backend/ @owner
+/frontend/ @owner
+/docker-compose.yml @owner
+/nginx/ @owner
+/docs/ @owner
+/.github/ @owner
+
