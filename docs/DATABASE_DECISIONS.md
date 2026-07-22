@@ -139,6 +139,23 @@ Why:
 - Published domain data remains in tables such as `bosses`, `items`, `quests`, and `rewards`.
 - AI never runs inside gameplay.
 
+## Decision 14: Admin Operations Are Future Proposals Until Approved
+
+Phase 2.3 documents admin operations, RBAC, moderation, content publishing, payment operations, email operations, feature flags, and anti-cheat investigation as architecture guidance only.
+
+Why:
+
+- Admin features are important but should not expand Phase 2.5 beyond the approved database implementation scope.
+- The MVP targets 100-200 concurrent users and should avoid premature table explosion.
+- Generalized action and version records are preferred over many specialized tables when admin implementation is later approved.
+- Admin operations must be isolated from Redis and WebSocket combat paths.
+
+Rules:
+
+- Do not create admin migrations, entities, APIs, services, controllers, WebSocket handlers, or UI from Phase 2.3 without explicit approval.
+- Treat all Phase 2.3 schema ideas as future proposals, not approved migrations.
+- Sensitive admin actions require least-privilege permissions, immutable audit records, and step-up authentication when implemented.
+
 ## Engineering Review
 
 Reviewed as Principal Database Architect:
@@ -158,6 +175,7 @@ Reviewed as Principal Database Architect:
 - Immutable reward ledger now records every reward grant.
 - Currency is explicitly deferred to avoid ambiguous ownership.
 - AI-generated content metadata is separated from published domain definitions.
+- Admin operations and RBAC are documented as future architecture without approving schema or implementation work.
 
 Improvement made during review:
 
