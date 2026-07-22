@@ -85,4 +85,11 @@ jacocoTestReport {
 dependencyCheck {
     failBuildOnCVSS = 7.0
     suppressionFile = file("config/owasp/suppressions.xml")
+
+    def nvdApiKey = System.getenv("NVD_API_KEY")
+    if (nvdApiKey) {
+        nvd {
+            apiKey = nvdApiKey
+        }
+    }
 }

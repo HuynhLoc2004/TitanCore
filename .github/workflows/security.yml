@@ -20,6 +20,7 @@ jobs:
   dependency-check:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -34,7 +35,17 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Cache OWASP Dependency Check Data
+        uses: actions/cache@v4
+        with:
+          path: ~/.gradle/dependency-check-data
+          key: ${{ runner.os }}-dependency-check-10.0.4-${{ hashFiles('backend/build.gradle', 'backend/settings.gradle', 'backend/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-dependency-check-10.0.4-
+
       - name: Run OWASP Dependency Check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: ./gradlew dependencyCheckAnalyze --no-daemon
 
       - name: Upload Dependency Check Report

@@ -19,6 +19,8 @@ scan_file() {
       type="private_key_header"
     elif [[ "$line" =~ (^|[^A-Za-z0-9_])(aws_access_key_id|aws_secret_access_key|api[_-]?key|password|secret|token)[[:space:]]*[:=][[:space:]]*[\"\']?\$\{[A-Z0-9_]+(:[^}]*)?\}[\"\']? ]]; then
       type=""
+    elif [[ "$line" =~ (^|[^A-Za-z0-9_])(aws_access_key_id|aws_secret_access_key|api[_-]?key|password|secret|token)[[:space:]]*[:=][[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*$ ]]; then
+      type=""
     elif [[ "$line" =~ (^|[^A-Za-z0-9_])(aws_access_key_id|aws_secret_access_key|api[_-]?key|password|secret|token)[[:space:]]*[:=][[:space:]]*[\"\']?[^[:space:]\"\']{8,}[\"\']? ]]; then
       type="${BASH_REMATCH[2]}"
     fi
