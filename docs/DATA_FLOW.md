@@ -120,9 +120,9 @@ sequenceDiagram
     Producer->>RabbitMQ: Notification event
     NotificationWorker->>PostgreSQL: Insert notification
     NotificationWorker->>Redis: Locate online presence/socket mapping
+    Redis-->>NotificationWorker: Routing result
     NotificationWorker->>WebSocket: Request realtime delivery if online
-    WebSocket-->>Producer: No direct callback
-    WebSocket-->>Client: Send realtime notification
+    WebSocket-->>Client: Send notification
 ```
 
 Persistent notification is stored in PostgreSQL. Redis only locates online presence; the WebSocket service sends realtime notifications.

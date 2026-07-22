@@ -263,7 +263,6 @@ Indexes:
 
 - `inventory_items_inventory_idx` on `inventory_id`.
 - `inventory_items_item_idx` on `item_id`.
-- Partial unique `(inventory_id, item_id)` where stackable ownership rules permit later implementation.
 
 #### `equipment`
 
@@ -505,6 +504,7 @@ Purpose: Immutable audit trail for every granted reward.
 | `source_type` | `varchar(32)` | not null |
 | `source_id` | `uuid` | not null |
 | `grant_type` | `varchar(32)` | not null, check `ITEM,CURRENCY,COSMETIC` |
+| `grant_key` | `varchar(160)` | not null |
 | `item_id` | `uuid` | nullable FK `items(id)` |
 | `currency_code` | `varchar(32)` | nullable |
 | `quantity` | `int` | nullable, check `quantity is null or quantity > 0` |
@@ -514,8 +514,16 @@ Purpose: Immutable audit trail for every granted reward.
 
 Constraints:
 
-- Unique `reward_ledger_claim_grant_uq` on `(reward_claim_id, grant_type, coalesce(item_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(currency_code, ''))` in migration form, or an equivalent generated-key strategy.
+- Unique `reward_ledger_claim_grant_uq` on `(reward_claim_id, grant_key)`.
 - Check exactly one grant target is present according to `grant_type`.
+
+Deterministic `grant_key` formats:
+
+- `ITEM:{itemId}`
+- `COSMETIC:{itemId}`
+- `CURRENCY:{currencyCode}`
+
+Multiple units of the same grant are aggregated into `quantity` or `amount` instead of creating duplicate grant rows.
 
 Indexes:
 
@@ -733,7 +741,7 @@ Purpose: Reliable publication bridge from PostgreSQL transactions to RabbitMQ.
 | `occurred_at` | `timestamptz` | not null |
 | `published_at` | `timestamptz` | nullable |
 | `attempt_count` | `int` | not null, default `0`, check `attempt_count >= 0` |
-| `next_attempt_at` | `timestamptz` | nullable |
+| `next_attempt_at` | `timestamptz` | not null, default `now()` |
 | `last_error` | `text` | nullable |
 
 Constraints:
@@ -750,6 +758,11 @@ Rules:
 - Battle completion and reward event creation occur in one transaction.
 - Payment state update and payment event creation occur in one transaction.
 - RabbitMQ publishers read unpublished outbox rows and mark `published_at` only after successful publish.
+- Poll unpublished rows where `published_at is null` and `next_attempt_at <= now()`.
+- Poll in ordered batches by `(next_attempt_at, occurred_at)`.
+- Use PostgreSQL `FOR UPDATE SKIP LOCKED` when multiple publishers run.
+- Mark `published_at` only after RabbitMQ publisher confirmation.
+- Delivery remains at-least-once, so consumers remain idempotent.
 
 #### `ai_generated_content`
 
@@ -795,8 +808,9 @@ Item ownership model:
 
 - Stackable items use one `inventory_items` row per `(inventory_id, item_id)` with `quantity > 0`.
 - Unique/non-stackable items use one row per owned item with `quantity = 1`.
-- Enforcement requires either separate stack policy constraints in migration or service-level validation in the approved inventory phase.
-- No partial unique constraint is approved in Phase 2 because the current columns alone cannot express stackability from `items.stackable` in a simple table-local constraint.
+- No database uniqueness rule for stackable ownership is approved yet.
+- Stackable and unique-item enforcement is deferred to the explicitly approved Inventory/Game Economy implementation design.
+- Phase 2.5 must not invent this constraint.
 
 ## Cascade And Orphan Strategy
 
@@ -819,6 +833,12 @@ Battle finalization strategy:
 - Redis finalization locks are optimization only.
 - PostgreSQL durable completion state is the final authority.
 - Updating a `battle_rooms` row from `ACTIVE` to `COMPLETED` must be conditional and idempotent.
+- Battle lifecycle check:
+  - `WAITING`: `started_at` and `ended_at` are null.
+  - `ACTIVE`: `started_at` is not null and `ended_at` is null.
+  - `COMPLETED` or `CANCELLED`: `ended_at` is not null.
+- Finalization must use a conditional update from `ACTIVE` to `COMPLETED`.
+- Only the transaction that updates one `battle_rooms` row may create the completion outbox event.
 - If Redis is lost before durable completion, the MVP policy is cancel-and-compensate; do not claim deterministic active battle reconstruction.
 
 ## Flyway Strategy

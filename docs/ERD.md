@@ -50,12 +50,6 @@ erDiagram
     ITEMS ||--o{ SHOP_ITEMS : sold_as
     PLAYER_PROFILES ||--o{ PAYMENT_TRANSACTIONS : pays
     USERS ||--o{ AUDIT_LOGS : performs
-    OUTBOX_EVENTS }o--|| BATTLE_ROOMS : publishes
-    OUTBOX_EVENTS }o--|| PAYMENT_TRANSACTIONS : publishes
-    AI_GENERATED_CONTENT }o--o| BOSSES : may_publish_to
-    AI_GENERATED_CONTENT }o--o| ITEMS : may_publish_to
-    AI_GENERATED_CONTENT }o--o| QUESTS : may_publish_to
-    AI_GENERATED_CONTENT }o--o| REWARDS : may_publish_to
 ```
 
 ## Relationship Notes
@@ -70,8 +64,8 @@ erDiagram
 - `guilds` to `guild_members` is one-to-many. Initial design allows one active guild per player.
 - `payment_transactions` are append-only ledger records and are never physically deleted.
 - `reward_ledger` is immutable and records every granted reward side effect.
-- `outbox_events` is a reliable publication table. It references aggregate identity by `(aggregate_type, aggregate_id)` rather than physical FK for polymorphic events.
-- `ai_generated_content` stores generation metadata only. Published domain definitions remain in their own tables.
+- `outbox_events` is a reliable publication table. It references aggregate identity by `(aggregate_type, aggregate_id)` and has no physical FK in the current design.
+- `ai_generated_content` stores generation metadata only and has no physical FK to published domain definitions.
 
 ## Cardinality Summary
 
@@ -89,11 +83,17 @@ erDiagram
 | Guild -> GuildMember | 1:N | Restrict or soft leave |
 | PlayerProfile -> PaymentTransaction | 1:N | Append-only |
 | RewardClaim -> RewardLedger | 1:N | Append-only |
-| Aggregate -> OutboxEvent | 1:N | Published asynchronously |
-| AI Generated Content -> Domain Definition | optional promotion | Explicit approved publish step |
 
 ## Completion And Publication Notes
 
 - One battle room can be finalized once by an idempotent `battle_rooms` status transition.
 - Reward publication is driven by `outbox_events`, not by volatile Redis state alone.
 - RabbitMQ redelivery cannot duplicate rewards because `reward_claims` has a durable unique idempotency key and `reward_ledger` records immutable grants.
+
+## Conceptual Relationships
+
+These are non-FK relationships:
+
+- `outbox_events.aggregate_type + outbox_events.aggregate_id` conceptually points to the aggregate that produced the event, such as a battle room or payment transaction.
+- `ai_generated_content` may be promoted into domain definitions such as bosses, items, quests, or rewards only through a later approved publishing workflow.
+- The physical ERD above contains only relationships backed by documented foreign keys.
