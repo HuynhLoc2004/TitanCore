@@ -32,6 +32,9 @@ erDiagram
 
     REWARDS ||--o{ REWARD_CLAIMS : claimed_as
     PLAYER_PROFILES ||--o{ REWARD_CLAIMS : receives
+    REWARD_CLAIMS ||--o{ REWARD_LEDGER : records
+    PLAYER_PROFILES ||--o{ REWARD_LEDGER : granted_to
+    ITEMS ||--o{ REWARD_LEDGER : grants
 
     QUESTS ||--o{ PLAYER_QUESTS : assigned
     PLAYER_PROFILES ||--o{ PLAYER_QUESTS : progresses
@@ -47,6 +50,12 @@ erDiagram
     ITEMS ||--o{ SHOP_ITEMS : sold_as
     PLAYER_PROFILES ||--o{ PAYMENT_TRANSACTIONS : pays
     USERS ||--o{ AUDIT_LOGS : performs
+    OUTBOX_EVENTS }o--|| BATTLE_ROOMS : publishes
+    OUTBOX_EVENTS }o--|| PAYMENT_TRANSACTIONS : publishes
+    AI_GENERATED_CONTENT }o--o| BOSSES : may_publish_to
+    AI_GENERATED_CONTENT }o--o| ITEMS : may_publish_to
+    AI_GENERATED_CONTENT }o--o| QUESTS : may_publish_to
+    AI_GENERATED_CONTENT }o--o| REWARDS : may_publish_to
 ```
 
 ## Relationship Notes
@@ -60,6 +69,9 @@ erDiagram
 - `rewards` to `reward_claims` is one-to-many. Reward claim rows provide idempotency and auditability.
 - `guilds` to `guild_members` is one-to-many. Initial design allows one active guild per player.
 - `payment_transactions` are append-only ledger records and are never physically deleted.
+- `reward_ledger` is immutable and records every granted reward side effect.
+- `outbox_events` is a reliable publication table. It references aggregate identity by `(aggregate_type, aggregate_id)` rather than physical FK for polymorphic events.
+- `ai_generated_content` stores generation metadata only. Published domain definitions remain in their own tables.
 
 ## Cardinality Summary
 
@@ -76,3 +88,12 @@ erDiagram
 | PlayerProfile -> RewardClaim | 1:N | Append-only |
 | Guild -> GuildMember | 1:N | Restrict or soft leave |
 | PlayerProfile -> PaymentTransaction | 1:N | Append-only |
+| RewardClaim -> RewardLedger | 1:N | Append-only |
+| Aggregate -> OutboxEvent | 1:N | Published asynchronously |
+| AI Generated Content -> Domain Definition | optional promotion | Explicit approved publish step |
+
+## Completion And Publication Notes
+
+- One battle room can be finalized once by an idempotent `battle_rooms` status transition.
+- Reward publication is driven by `outbox_events`, not by volatile Redis state alone.
+- RabbitMQ redelivery cannot duplicate rewards because `reward_claims` has a durable unique idempotency key and `reward_ledger` records immutable grants.

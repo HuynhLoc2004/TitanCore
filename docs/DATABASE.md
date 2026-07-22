@@ -376,6 +376,12 @@ Indexes:
 - `battle_history_player_idx` on `(player_id, joined_at desc)`.
 - `battle_history_room_rank_idx` on `(battle_room_id, rank_position)`.
 
+One-time finalization:
+
+- Unique `battle_history_room_player_uq` on `(battle_room_id, player_id)` prevents duplicate player summaries.
+- `battle_rooms.status = COMPLETED` with `ended_at` set is the durable room completion marker.
+- Future migration should add a partial unique completion guard if a separate completion table is introduced. In this design, `battle_rooms.id` is the one completion identity and must be updated idempotently.
+
 #### `damage_logs`
 
 Purpose: Append-only sampled or finalized damage events for audit and analytics. Not written per hit unless batching is enabled.
@@ -468,7 +474,7 @@ Purpose: Tracks reward ownership and claiming.
 | `reward_id` | `uuid` | FK `rewards(id)`, not null |
 | `player_id` | `uuid` | FK `player_profiles(id)`, not null |
 | `source_type` | `varchar(32)` | not null |
-| `source_id` | `uuid` | nullable |
+| `source_id` | `uuid` | not null |
 | `status` | `varchar(24)` | not null, default `PENDING` |
 | `claimed_at` | `timestamptz` | nullable |
 | `created_at` | `timestamptz` | not null |
@@ -478,12 +484,43 @@ Indexes:
 - `reward_claims_player_status_idx` on `(player_id, status, created_at desc)`.
 - Unique `reward_claims_idempotency_uq` on `(player_id, reward_id, source_type, source_id)` for exactly-once logical reward processing.
 
+The `source_id` is a durable event or aggregate identifier, such as `battle_room_id`, `payment_transaction_id`, or a durable outbox `aggregate_id`. It is non-null because PostgreSQL unique constraints allow multiple nulls, which would break reward idempotency during RabbitMQ redelivery.
+
 Reward transaction rule:
 
 - Create or confirm reward claim.
 - Mutate inventory if the reward grants items.
-- Insert immutable reward ledger entry when ledger table is introduced.
+- Insert immutable reward ledger entry.
 - Commit all reward side effects atomically.
+
+#### `reward_ledger`
+
+Purpose: Immutable audit trail for every granted reward.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `uuid` | PK |
+| `reward_claim_id` | `uuid` | FK `reward_claims(id)`, not null |
+| `player_id` | `uuid` | FK `player_profiles(id)`, not null |
+| `source_type` | `varchar(32)` | not null |
+| `source_id` | `uuid` | not null |
+| `grant_type` | `varchar(32)` | not null, check `ITEM,CURRENCY,COSMETIC` |
+| `item_id` | `uuid` | nullable FK `items(id)` |
+| `currency_code` | `varchar(32)` | nullable |
+| `quantity` | `int` | nullable, check `quantity is null or quantity > 0` |
+| `amount` | `numeric(18,2)` | nullable, check `amount is null or amount >= 0` |
+| `metadata` | `jsonb` | not null, default `{}` |
+| `created_at` | `timestamptz` | not null |
+
+Constraints:
+
+- Unique `reward_ledger_claim_grant_uq` on `(reward_claim_id, grant_type, coalesce(item_id, '00000000-0000-0000-0000-000000000000'::uuid), coalesce(currency_code, ''))` in migration form, or an equivalent generated-key strategy.
+- Check exactly one grant target is present according to `grant_type`.
+
+Indexes:
+
+- `reward_ledger_player_created_idx` on `(player_id, created_at desc)`.
+- `reward_ledger_source_idx` on `(source_type, source_id)`.
 
 #### `quests`
 
@@ -656,6 +693,11 @@ Indexes:
 - `payment_transactions_player_created_idx` on `(player_id, created_at desc)`.
 - `payment_transactions_status_idx` on `status`.
 
+Payment processing rule:
+
+- Durable payment transaction state and its outbox event must be persisted in the same PostgreSQL transaction.
+- Payment side effects must be idempotent by `idempotency_key` and provider transaction identity.
+
 #### `audit_logs`
 
 Purpose: Append-only audit events.
@@ -676,6 +718,86 @@ Indexes:
 - `audit_logs_actor_created_idx` on `(actor_user_id, created_at desc)`.
 - `audit_logs_target_idx` on `(target_type, target_id, created_at desc)`.
 
+#### `outbox_events`
+
+Purpose: Reliable publication bridge from PostgreSQL transactions to RabbitMQ.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `uuid` | PK |
+| `aggregate_type` | `varchar(80)` | not null |
+| `aggregate_id` | `uuid` | not null |
+| `event_type` | `varchar(120)` | not null |
+| `idempotency_key` | `varchar(160)` | not null |
+| `payload` | `jsonb` | not null |
+| `occurred_at` | `timestamptz` | not null |
+| `published_at` | `timestamptz` | nullable |
+| `attempt_count` | `int` | not null, default `0`, check `attempt_count >= 0` |
+| `next_attempt_at` | `timestamptz` | nullable |
+| `last_error` | `text` | nullable |
+
+Constraints:
+
+- Unique `outbox_events_idempotency_uq` on `idempotency_key`.
+
+Indexes:
+
+- `outbox_events_unpublished_idx` on `(next_attempt_at, occurred_at)` where `published_at is null`.
+- `outbox_events_aggregate_idx` on `(aggregate_type, aggregate_id, occurred_at desc)`.
+
+Rules:
+
+- Battle completion and reward event creation occur in one transaction.
+- Payment state update and payment event creation occur in one transaction.
+- RabbitMQ publishers read unpublished outbox rows and mark `published_at` only after successful publish.
+
+#### `ai_generated_content`
+
+Purpose: Future persistence for validated AI-generated JSON content metadata. This table does not publish gameplay state directly.
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `uuid` | PK |
+| `content_type` | `varchar(40)` | not null |
+| `schema_version` | `int` | not null |
+| `prompt_hash` | `varchar(128)` | not null |
+| `provider` | `varchar(60)` | nullable |
+| `model` | `varchar(80)` | nullable |
+| `generation_status` | `varchar(24)` | not null |
+| `validation_status` | `varchar(24)` | not null |
+| `validation_error` | `text` | nullable |
+| `payload` | `jsonb` | nullable |
+| `asset_url` | `text` | nullable |
+| `created_at` | `timestamptz` | not null |
+| `published_at` | `timestamptz` | nullable |
+
+Constraints:
+
+- Unique `ai_generated_content_prompt_schema_uq` on `(content_type, schema_version, prompt_hash)`.
+
+Indexes:
+
+- `ai_generated_content_status_idx` on `(generation_status, validation_status, created_at desc)`.
+
+Boundary:
+
+- AI generation metadata is separate from published domain definitions like `bosses`, `items`, `quests`, and `rewards`.
+- Only validated JSON may be promoted into domain definition tables in a later approved phase.
+- AI never runs inside gameplay.
+
+## Currency And Inventory Consistency
+
+Currency is deferred to the Game Economy phase.
+
+Phase 2.5 must not implement player currency balances, currency mutation, or currency ledgers unless the Game Economy scope is explicitly approved. Until then, rewards that mention currency remain design placeholders and must not be executable economy behavior.
+
+Item ownership model:
+
+- Stackable items use one `inventory_items` row per `(inventory_id, item_id)` with `quantity > 0`.
+- Unique/non-stackable items use one row per owned item with `quantity = 1`.
+- Enforcement requires either separate stack policy constraints in migration or service-level validation in the approved inventory phase.
+- No partial unique constraint is approved in Phase 2 because the current columns alone cannot express stackability from `items.stackable` in a simple table-local constraint.
+
 ## Cascade And Orphan Strategy
 
 - Use restrictive FKs for identity, payments, inventory, and audit data.
@@ -691,6 +813,13 @@ Indexes:
 - Use optimistic locking for mutable aggregate roots such as users and player profiles.
 - Use idempotency keys for payment, reward, and async job results.
 - Use explicit locking only for rare administrative operations.
+
+Battle finalization strategy:
+
+- Redis finalization locks are optimization only.
+- PostgreSQL durable completion state is the final authority.
+- Updating a `battle_rooms` row from `ACTIVE` to `COMPLETED` must be conditional and idempotent.
+- If Redis is lost before durable completion, the MVP policy is cancel-and-compensate; do not claim deterministic active battle reconstruction.
 
 ## Flyway Strategy
 
@@ -724,3 +853,56 @@ Rules:
 - Sensitive payment metadata must be minimized and masked in logs.
 - Audit logs must not contain raw secrets.
 - PII should be limited and encrypted later if legal/compliance needs require it.
+
+## Scope Classification
+
+Required for the first boss-raid vertical slice:
+
+- `users`
+- `refresh_tokens`
+- `user_sessions`
+- `player_profiles`
+- `bosses`
+- `boss_phases`
+- `boss_skills`
+- `battle_rooms`
+- `battle_history`
+- `damage_logs`
+- `rewards`
+- `reward_claims`
+- `reward_ledger`
+- `outbox_events`
+
+Foundation required before rewards/auth can be implemented:
+
+- `login_history`
+- `player_statistics`
+- `player_settings`
+- `inventories`
+- `inventory_items`
+- `items`
+- `item_rarities`
+- `item_types`
+- `item_attributes`
+- `equipment`
+- `notifications`
+- `audit_logs`
+
+Deferred until Game Economy, Social, AI, or later feature phases:
+
+- Currency definition, player balance, and currency ledger tables.
+- `seasons`
+- `rankings`
+- `leaderboard_snapshots`
+- `quests`
+- `player_quests`
+- `achievements`
+- `player_achievements`
+- `guilds`
+- `guild_members`
+- `mail`
+- `shop_items`
+- `payment_transactions`
+- `ai_generated_content`
+
+Phase 2.5 must implement only approved tables required by its explicitly approved scope, not every future table blindly.

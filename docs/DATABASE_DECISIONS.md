@@ -21,7 +21,7 @@ RabbitMQ is used for rewards, notifications, payments, mail, analytics, and audi
 
 It is not used for combat actions because queue latency and retry semantics do not belong in realtime gameplay.
 
-RabbitMQ publication for battle completion should be driven from durable PostgreSQL completion state. A transactional outbox is the preferred future implementation pattern.
+RabbitMQ publication for battle completion and payment processing is driven from durable PostgreSQL state through `outbox_events`.
 
 ## Decision 3: UUID Primary Keys
 
@@ -99,6 +99,46 @@ reward_claims(player_id, reward_id, source_type, source_id)
 
 Reward claim creation, inventory mutation, and immutable ledger insertion must happen in one PostgreSQL transaction.
 
+## Decision 10: Transactional Outbox
+
+Battle completion and payment processing must persist their durable state and the matching `outbox_events` row in the same PostgreSQL transaction.
+
+Why:
+
+- RabbitMQ is at-least-once and not transactional with PostgreSQL.
+- Publishing directly after a database commit can lose events if the process crashes.
+- Outbox polling makes publication retryable and auditable.
+
+## Decision 11: Immutable Reward Ledger
+
+Every granted reward must be recorded in `reward_ledger`.
+
+Why:
+
+- Reward claims show eligibility and claim status.
+- Inventory rows show current ownership.
+- The ledger shows immutable historical grant facts for audit, support, and anti-cheat review.
+
+## Decision 12: Currency Deferred
+
+Currency ownership is deferred to the Game Economy phase.
+
+Why:
+
+- Phase 1 MVP is boss-room combat and reward foundation.
+- Currency balances and ledgers are economy-critical and require separate approval.
+- Phase 2.5 must not implement currency behavior unless explicitly scoped.
+
+## Decision 13: AI Generated Content Metadata Boundary
+
+`ai_generated_content` stores generation metadata and validated JSON payloads only.
+
+Why:
+
+- AI-generated data must be validated before becoming a domain definition.
+- Published domain data remains in tables such as `bosses`, `items`, `quests`, and `rewards`.
+- AI never runs inside gameplay.
+
 ## Engineering Review
 
 Reviewed as Principal Database Architect:
@@ -114,6 +154,10 @@ Reviewed as Principal Database Architect:
 - Heartbeat-based presence avoids stale permanent online state.
 - Reward processing has a clear logical exactly-once strategy.
 - Reliable reward publication requires durable completion state before RabbitMQ publish.
+- Transactional outbox now has a concrete table design.
+- Immutable reward ledger now records every reward grant.
+- Currency is explicitly deferred to avoid ambiguous ownership.
+- AI-generated content metadata is separated from published domain definitions.
 
 Improvement made during review:
 
@@ -122,3 +166,5 @@ Improvement made during review:
 - Payment and reward idempotency are explicit requirements.
 - Boss HP and damage keys were changed from boss-scoped to room-scoped.
 - Permanent online presence was replaced with heartbeat-based expiring presence.
+- Reward claim `source_id` is non-null to make PostgreSQL idempotency reliable.
+- Cooldown and attack idempotency keys are room-scoped and Redis Cluster hash-slot compatible.

@@ -78,9 +78,8 @@ sequenceDiagram
 
     Battle->>Redis: Acquire one-time finalization lock
     Battle->>Redis: Read final damage leaderboard
-    Battle->>PostgreSQL: Persist durable battle completion
-    Battle->>PostgreSQL: Persist outbox reward event
-    Battle->>RabbitMQ: Publish reward event from durable outbox
+    Battle->>PostgreSQL: Transaction: complete room + persist outbox reward event
+    Battle->>RabbitMQ: Publish reward event from outbox publisher
     RewardWorker->>PostgreSQL: Transaction: reward claim + inventory mutation + immutable ledger
     RewardWorker->>NotificationQueue: Publish notification event
 ```
@@ -99,8 +98,8 @@ sequenceDiagram
 
     PayOS->>API: Webhook
     API->>API: Verify signature
-    API->>PostgreSQL: Upsert payment transaction
-    API->>RabbitMQ: Publish payment event
+    API->>PostgreSQL: Transaction: upsert payment + persist outbox event
+    API->>RabbitMQ: Publish payment event from outbox publisher
     PaymentWorker->>PostgreSQL: Apply cosmetic entitlement
 ```
 
@@ -115,11 +114,15 @@ sequenceDiagram
     participant NotificationWorker
     participant PostgreSQL
     participant Redis
+    participant WebSocket
+    participant Client
 
     Producer->>RabbitMQ: Notification event
     NotificationWorker->>PostgreSQL: Insert notification
     NotificationWorker->>Redis: Locate online presence/socket mapping
-    NotificationWorker->>Producer: Return realtime delivery target if online
+    NotificationWorker->>WebSocket: Request realtime delivery if online
+    WebSocket-->>Producer: No direct callback
+    WebSocket-->>Client: Send realtime notification
 ```
 
 Persistent notification is stored in PostgreSQL. Redis only locates online presence; the WebSocket service sends realtime notifications.

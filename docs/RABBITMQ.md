@@ -6,7 +6,7 @@ RabbitMQ is used only for asynchronous processing. It is forbidden inside realti
 
 | Queue | Producer | Consumer | Purpose |
 | --- | --- | --- | --- |
-| `reward.queue` | Battle completion service | Reward worker | Create reward claims and inventory grants |
+| `reward.queue` | Outbox publisher | Reward worker | Create reward claims, inventory grants, and reward ledger entries |
 | `notification.queue` | Reward, payment, system events | Notification worker | Create in-app notifications |
 | `payment.queue` | Payment webhook handler | Payment worker | Verify and finalize payment side effects |
 | `mail.queue` | Reward/admin/system events | Mail worker | Send persistent mail |
@@ -61,7 +61,11 @@ If the same RabbitMQ message is delivered again, the consumer reads the existing
 
 ## Reliable Publication
 
-Battle completion must first be represented as durable PostgreSQL state. RabbitMQ publication should be driven from that durable state, preferably with a transactional outbox table in a future implementation phase.
+Battle completion must first be represented as durable PostgreSQL state. RabbitMQ publication is driven from that durable state through the transactional outbox pattern.
+
+Approved durable table:
+
+- `outbox_events`
 
 Flow:
 
@@ -74,6 +78,8 @@ mark outbox event published
 ```
 
 This avoids losing reward events if the server crashes after database commit but before RabbitMQ publish.
+
+Battle completion and payment processing must persist durable state and the outbox event in the same PostgreSQL transaction.
 
 ## Message Size
 
