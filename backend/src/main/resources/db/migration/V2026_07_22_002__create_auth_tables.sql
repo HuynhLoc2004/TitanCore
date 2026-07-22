@@ -36,6 +36,7 @@ create table refresh_tokens (
 create index refresh_tokens_user_idx on refresh_tokens (user_id);
 create index refresh_tokens_family_idx on refresh_tokens (token_family_id);
 create index refresh_tokens_expires_idx on refresh_tokens (expires_at);
+create index refresh_tokens_replaced_by_idx on refresh_tokens (replaced_by_token_id);
 
 create table login_history (
     id uuid primary key default gen_random_uuid(),

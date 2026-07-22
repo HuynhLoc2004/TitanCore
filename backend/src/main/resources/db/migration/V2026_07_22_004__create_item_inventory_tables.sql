@@ -33,6 +33,7 @@ create table items (
 );
 
 create index items_type_rarity_idx on items (type_id, rarity_id);
+create index items_rarity_idx on items (rarity_id);
 
 create table item_attributes (
     id uuid primary key default gen_random_uuid(),

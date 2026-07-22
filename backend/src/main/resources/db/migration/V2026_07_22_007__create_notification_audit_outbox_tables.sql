@@ -10,6 +10,7 @@ create table notifications (
 );
 
 create index notifications_player_unread_idx on notifications (player_id, created_at desc) where read_at is null;
+create index notifications_player_created_idx on notifications (player_id, created_at desc);
 
 create table audit_logs (
     id uuid primary key default gen_random_uuid(),

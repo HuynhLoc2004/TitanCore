@@ -25,6 +25,7 @@ create table reward_claims (
 );
 
 create index reward_claims_player_status_idx on reward_claims (player_id, status, created_at desc);
+create index reward_claims_reward_idx on reward_claims (reward_id);
 
 create table reward_ledger (
     id uuid primary key default gen_random_uuid(),
@@ -62,8 +63,25 @@ create table reward_ledger (
             and amount is not null
             and amount > 0
         )
+    ),
+    constraint reward_ledger_grant_key_ck check (
+        (
+            grant_type = 'ITEM'
+            and grant_key = 'ITEM:' || item_id::text
+        )
+        or (
+            grant_type = 'COSMETIC'
+            and grant_key = 'COSMETIC:' || item_id::text
+        )
+        or (
+            grant_type = 'CURRENCY'
+            and currency_code = upper(currency_code)
+            and currency_code ~ '^[A-Z][A-Z0-9_]{1,31}$'
+            and grant_key = 'CURRENCY:' || currency_code
+        )
     )
 );
 
 create index reward_ledger_player_created_idx on reward_ledger (player_id, created_at desc);
 create index reward_ledger_source_idx on reward_ledger (source_type, source_id);
+create index reward_ledger_item_idx on reward_ledger (item_id);

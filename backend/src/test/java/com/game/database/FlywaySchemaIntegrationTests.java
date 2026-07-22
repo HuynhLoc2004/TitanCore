@@ -101,13 +101,19 @@ class FlywaySchemaIntegrationTests {
         assertThat(indexExists("users_email_uq")).isTrue();
         assertThat(indexExists("users_username_uq")).isTrue();
         assertThat(indexExists("player_profiles_display_name_uq")).isTrue();
+        assertThat(indexExists("refresh_tokens_replaced_by_idx")).isTrue();
+        assertThat(indexExists("items_rarity_idx")).isTrue();
         assertThat(constraintExists("reward_claims_idempotency_uq")).isTrue();
         assertThat(constraintExists("reward_ledger_claim_grant_uq")).isTrue();
+        assertThat(constraintExists("reward_ledger_grant_key_ck")).isTrue();
+        assertThat(indexExists("reward_claims_reward_idx")).isTrue();
+        assertThat(indexExists("reward_ledger_item_idx")).isTrue();
         assertThat(constraintExists("outbox_events_idempotency_uq")).isTrue();
         assertThat(indexExists("outbox_events_unpublished_idx")).isTrue();
         assertThat(indexIsPartial("outbox_events_unpublished_idx")).isTrue();
         assertThat(indexExists("notifications_player_unread_idx")).isTrue();
         assertThat(indexIsPartial("notifications_player_unread_idx")).isTrue();
+        assertThat(indexExists("notifications_player_created_idx")).isTrue();
     }
 
     @Test
@@ -139,9 +145,15 @@ class FlywaySchemaIntegrationTests {
         UUID playerId = insertPlayer(userId, "RewardUser");
         UUID rewardId = insertReward();
         UUID rewardClaimId = insertRewardClaim(rewardId, playerId);
+        UUID secondRewardClaimId = insertRewardClaim(
+                rewardId,
+                playerId,
+                UUID.fromString("00000000-0000-0000-0000-000000000003")
+        );
         int rarityId = insertItemRarity();
         int typeId = insertItemType();
         UUID itemId = insertItem(rarityId, typeId);
+        UUID secondItemId = insertItem(rarityId, typeId, "second-test-item");
 
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into reward_claims (reward_id, player_id, source_type, source_id, status)
@@ -172,6 +184,102 @@ class FlywaySchemaIntegrationTests {
                 itemId,
                 1
         );
+
+        jdbcTemplate.update("""
+                insert into reward_ledger (
+                    reward_claim_id, player_id, source_type, source_id,
+                    grant_type, grant_key, item_id, quantity
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rewardClaimId,
+                playerId,
+                "BATTLE",
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "COSMETIC",
+                "COSMETIC:" + itemId,
+                itemId,
+                1
+        );
+
+        jdbcTemplate.update("""
+                insert into reward_ledger (
+                    reward_claim_id, player_id, source_type, source_id,
+                    grant_type, grant_key, currency_code, amount
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rewardClaimId,
+                playerId,
+                "BATTLE",
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "CURRENCY",
+                "CURRENCY:GOLD",
+                "GOLD",
+                25
+        );
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into reward_ledger (
+                    reward_claim_id, player_id, source_type, source_id,
+                    grant_type, grant_key, item_id, quantity
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                secondRewardClaimId,
+                playerId,
+                "BATTLE",
+                UUID.fromString("00000000-0000-0000-0000-000000000003"),
+                "ITEM",
+                "ITEM:" + itemId,
+                secondItemId,
+                1
+        )).hasMessageContaining("reward_ledger_grant_key_ck");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into reward_ledger (
+                    reward_claim_id, player_id, source_type, source_id,
+                    grant_type, grant_key, item_id, quantity
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                secondRewardClaimId,
+                playerId,
+                "BATTLE",
+                UUID.fromString("00000000-0000-0000-0000-000000000003"),
+                "COSMETIC",
+                "ITEM:" + itemId,
+                itemId,
+                1
+        )).hasMessageContaining("reward_ledger_grant_key_ck");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into reward_ledger (
+                    reward_claim_id, player_id, source_type, source_id,
+                    grant_type, grant_key, currency_code, amount
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                secondRewardClaimId,
+                playerId,
+                "BATTLE",
+                UUID.fromString("00000000-0000-0000-0000-000000000003"),
+                "CURRENCY",
+                "CURRENCY:gold",
+                "gold",
+                25
+        )).hasMessageContaining("reward_ledger_grant_key_ck");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                insert into reward_ledger (
+                    reward_claim_id, player_id, source_type, source_id,
+                    grant_type, grant_key, item_id, quantity
+                ) values (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rewardClaimId,
+                playerId,
+                "BATTLE",
+                UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                "ITEM",
+                "ITEM:" + itemId,
+                itemId,
+                2
+        )).hasMessageContaining("reward_ledger_claim_grant_uq");
 
         assertThatThrownBy(() -> jdbcTemplate.update("""
                 insert into reward_ledger (
@@ -271,6 +379,14 @@ class FlywaySchemaIntegrationTests {
     }
 
     private static UUID insertRewardClaim(UUID rewardId, UUID playerId) {
+        return insertRewardClaim(
+                rewardId,
+                playerId,
+                UUID.fromString("00000000-0000-0000-0000-000000000001")
+        );
+    }
+
+    private static UUID insertRewardClaim(UUID rewardId, UUID playerId, UUID sourceId) {
         return jdbcTemplate.queryForObject("""
                 insert into reward_claims (reward_id, player_id, source_type, source_id)
                 values (?, ?, ?, ?)
@@ -280,7 +396,7 @@ class FlywaySchemaIntegrationTests {
                 rewardId,
                 playerId,
                 "BATTLE",
-                UUID.fromString("00000000-0000-0000-0000-000000000001")
+                sourceId
         );
     }
 
@@ -296,10 +412,14 @@ class FlywaySchemaIntegrationTests {
     }
 
     private static UUID insertItem(int rarityId, int typeId) {
+        return insertItem(rarityId, typeId, rarityId + "-" + typeId);
+    }
+
+    private static UUID insertItem(int rarityId, int typeId, String code) {
         return jdbcTemplate.queryForObject("""
                 insert into items (rarity_id, type_id, code, name)
                 values (?, ?, ?, ?)
                 returning id
-                """, UUID.class, 1, 1, rarityId + "-" + typeId, "Test Item");
+                """, UUID.class, rarityId, typeId, code, "Test Item");
     }
 }
