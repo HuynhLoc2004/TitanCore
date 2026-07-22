@@ -1,4 +1,4 @@
-FROM gradle:8.10.2-jdk21 AS build
+FROM gradle:9.6.1-jdk21 AS build
 WORKDIR /workspace
 COPY settings.gradle build.gradle ./
 COPY src ./src
