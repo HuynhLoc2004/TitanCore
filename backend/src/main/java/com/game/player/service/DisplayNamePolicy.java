@@ -51,7 +51,7 @@ public class DisplayNamePolicy {
         for (int offset = 0; offset < value.length();) {
             int codePoint = value.codePointAt(offset);
             offset += Character.charCount(codePoint);
-            if (UCharacter.isUWhiteSpace(codePoint)) {
+            if (UCharacter.isUWhiteSpace(codePoint) || UCharacter.isSpaceChar(codePoint)) {
                 pendingSpace = result.length() > 0;
             } else {
                 if (pendingSpace) {

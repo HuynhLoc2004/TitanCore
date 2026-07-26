@@ -101,7 +101,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const completeOnboardingAction = useCallback(async (displayName: string, expectedVersion: number) => {
+    const generation = getAuthGeneration();
     const profile = await completeProfileOnboarding(displayName, expectedVersion);
+    if (generation !== getAuthGeneration()) {
+      throw new Error('Stale onboarding completion');
+    }
     setUser((current) => current ? { ...current, profile } : current);
   }, []);
 

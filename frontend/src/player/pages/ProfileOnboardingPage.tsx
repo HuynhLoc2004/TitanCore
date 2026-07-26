@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../auth/api';
 import { useAuth } from '../../auth/useAuth';
 import { navigate } from '../../app/AppRoutes';
+import { countGraphemes as countFallbackGraphemes } from 'unicode-segmenter/grapheme';
 
 const MIN_GRAPHEMES = 3;
 const MAX_GRAPHEMES = 24;
@@ -13,7 +14,10 @@ export function ProfileOnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const submissionRef = useRef<Promise<void> | null>(null);
-  const graphemeCount = useMemo(() => countGraphemes(displayName.trim()), [displayName]);
+  const logoutPromiseRef = useRef<Promise<void> | null>(null);
+  const submissionCancelledRef = useRef(false);
+  const presentationName = useMemo(() => normalizeDisplayNamePresentation(displayName), [displayName]);
+  const graphemeCount = useMemo(() => countDisplayNameGraphemes(presentationName), [presentationName]);
   const validLength = graphemeCount >= MIN_GRAPHEMES && graphemeCount <= MAX_GRAPHEMES;
 
   const submit = () => {
@@ -25,17 +29,27 @@ export function ProfileOnboardingPage() {
       inputRef.current?.focus();
       return Promise.resolve();
     }
+    submissionCancelledRef.current = false;
     setError(null);
     setSubmitting(true);
     const request = completeOnboarding(displayName, user?.profile.version ?? 0)
-      .then(() => navigate('/app', { replace: true }))
+      .then(() => {
+        if (!submissionCancelledRef.current) {
+          navigate('/app', { replace: true });
+        }
+      })
       .catch((caught: unknown) => {
+        if (submissionCancelledRef.current) {
+          return;
+        }
         setError(messageFor(caught));
         inputRef.current?.focus();
       })
       .finally(() => {
         submissionRef.current = null;
-        setSubmitting(false);
+        if (!submissionCancelledRef.current) {
+          setSubmitting(false);
+        }
       });
     submissionRef.current = request;
     return request;
@@ -60,7 +74,7 @@ export function ProfileOnboardingPage() {
             <span className="tc-preview-body" />
             <span className="tc-preview-shield" />
           </div>
-          <div className="tc-nameplate">{displayName.trim() || 'Your raid name'}</div>
+          <div className="tc-nameplate">{presentationName || 'Your raid name'}</div>
         </div>
 
         <form
@@ -111,8 +125,15 @@ export function ProfileOnboardingPage() {
           <button
             className="tc-link-button"
             type="button"
-            disabled={submitting}
-            onClick={() => void logout()}
+            onClick={() => {
+              if (logoutPromiseRef.current) {
+                return;
+              }
+              submissionCancelledRef.current = true;
+              logoutPromiseRef.current = logout().finally(() => {
+                logoutPromiseRef.current = null;
+              });
+            }}
           >
             Log out
           </button>
@@ -122,7 +143,11 @@ export function ProfileOnboardingPage() {
   );
 }
 
-function countGraphemes(value: string) {
+export function normalizeDisplayNamePresentation(value: string) {
+  return value.replace(/\p{White_Space}+/gu, ' ').trim();
+}
+
+export function countDisplayNameGraphemes(value: string) {
   const segmenterApi = Intl as typeof Intl & {
     Segmenter?: new (
       locale?: string,
@@ -132,7 +157,7 @@ function countGraphemes(value: string) {
   if (segmenterApi.Segmenter) {
     return Array.from(new segmenterApi.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)).length;
   }
-  return Array.from(value).length;
+  return countFallbackGraphemes(value);
 }
 
 function messageFor(error: unknown) {

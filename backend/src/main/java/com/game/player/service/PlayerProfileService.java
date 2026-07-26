@@ -67,8 +67,16 @@ public class PlayerProfileService {
         try {
             if (profileRepository.completeOnboarding(userId, candidate.displayName(), candidate.displayNameKey(),
                     request.expectedVersion(), now) != 1) {
-                throw new AuthException(HttpStatus.CONFLICT, "PROFILE_VERSION_CONFLICT",
-                        "Profile version conflict");
+                PlayerProfileIdentity authoritative = find(userId);
+                if (authoritative.onboardingCompleted()
+                        && authoritative.displayNameKey().equals(candidate.displayNameKey())) {
+                    return toResponse(authoritative);
+                }
+                if (authoritative.onboardingCompleted()) {
+                    throw new AuthException(HttpStatus.CONFLICT, "ONBOARDING_ALREADY_COMPLETED",
+                            "Profile onboarding is already completed");
+                }
+                throw new AuthException(HttpStatus.CONFLICT, "PROFILE_VERSION_CONFLICT", "Profile version conflict");
             }
         } catch (DuplicateKeyException exception) {
             throw new AuthException(HttpStatus.CONFLICT, "DISPLAY_NAME_UNAVAILABLE",

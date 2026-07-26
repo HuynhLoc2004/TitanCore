@@ -13,7 +13,8 @@ class DisplayNamePolicyTests {
 
     @Test
     void normalizesVietnameseWhitespaceAndCanonicalKey() {
-        DisplayNamePolicy.ValidatedDisplayName result = policy.validate("  Ra\u0301id\u2002 Hu\u0300ng  ");
+        DisplayNamePolicy.ValidatedDisplayName result = policy.validate(
+                "\u00A0 Ra\u0301id\u2002\u00A0Hu\u0300ng \u00A0");
 
         assertThat(result.displayName()).isEqualTo("R\u00E1id H\u00F9ng");
         assertThat(result.displayNameKey()).isEqualTo("r\u00E1id h\u00F9ng");

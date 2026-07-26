@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LoginPage } from '../auth/pages/LoginPage';
 import { OAuthCallbackPage } from '../auth/pages/OAuthCallbackPage';
 import { RegisterPage } from '../auth/pages/RegisterPage';
@@ -36,6 +36,7 @@ export function navigate(route: Route, options: { replace?: boolean } = {}) {
 export function AppRoutes() {
   const [route, setRoute] = useState<Route>(currentRoute);
   const { status, user, logout } = useAuth();
+  const redirectRef = useRef<string | null>(null);
 
   useEffect(() => {
     const listener = () => setRoute(currentRoute());
@@ -46,12 +47,23 @@ export function AppRoutes() {
   useEffect(() => {
     if (status === 'authenticated' && user && route !== '/auth/oauth/callback') {
       const destination = user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app';
-      if (route !== destination) {
+      const redirectKey = `${route}:${destination}`;
+      if (route !== destination && redirectRef.current !== redirectKey) {
+        redirectRef.current = redirectKey;
         navigate(destination, { replace: true });
       }
     }
     if (status === 'anonymous' && (route === '/app' || route === '/onboarding')) {
-      navigate('/login', { replace: true });
+      const redirectKey = `${route}:/login`;
+      if (redirectRef.current !== redirectKey) {
+        redirectRef.current = redirectKey;
+        navigate('/login', { replace: true });
+      }
+    }
+    if ((status === 'authenticated' && user
+        && route === (user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app'))
+        || (status === 'anonymous' && route !== '/app' && route !== '/onboarding')) {
+      redirectRef.current = null;
     }
   }, [route, status, user]);
 
@@ -63,13 +75,13 @@ export function AppRoutes() {
     return <BootstrapScreen />;
   }
 
-  if (status === 'authenticated' && user?.profile.onboardingStatus === 'REQUIRED'
-      && route === '/onboarding') {
-    return <ProfileOnboardingPage />;
-  }
-
-  if (status === 'authenticated' && route !== '/app') {
-    return <RedirectingScreen />;
+  if (status === 'authenticated' && user) {
+    if (user.profile.onboardingStatus === 'REQUIRED') {
+      return route === '/onboarding' ? <ProfileOnboardingPage /> : <RedirectingScreen />;
+    }
+    if (route !== '/app') {
+      return <RedirectingScreen />;
+    }
   }
 
   if (route === '/register') {

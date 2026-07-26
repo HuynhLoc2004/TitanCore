@@ -39,9 +39,12 @@ class ProfileOnboardingMigrationIntegrationTests {
         UUID localUser = insertUser(jdbc, "local-backfill@example.com", "LocalHero", "hash");
         UUID googleUser = insertUser(jdbc, "google-backfill@example.com", "g_google", null);
         UUID linkedUser = insertUser(jdbc, "linked-backfill@example.com", "LinkedHero", "hash");
+        UUID unknownPasswordlessUser = insertUser(
+                jdbc, "unknown-passwordless@example.com", "unknown_passwordless", null);
         insertProfile(jdbc, localUser, "LocalHero");
         insertProfile(jdbc, googleUser, "g_google");
         insertProfile(jdbc, linkedUser, "LinkedHero");
+        insertProfile(jdbc, unknownPasswordlessUser, "unknown_passwordless");
         insertGoogleIdentity(jdbc, googleUser, "google-subject");
         insertGoogleIdentity(jdbc, linkedUser, "linked-subject");
 
@@ -58,6 +61,7 @@ class ProfileOnboardingMigrationIntegrationTests {
         assertThat(completedAt(jdbc, localUser)).isNotNull();
         assertThat(completedAt(jdbc, linkedUser)).isNotNull();
         assertThat(completedAt(jdbc, googleUser)).isNull();
+        assertThat(completedAt(jdbc, unknownPasswordlessUser)).isNull();
         assertThat(jdbc.queryForObject("""
                 select count(*) from flyway_schema_history
                 where script = 'V2026_07_26_001__create_user_oauth_accounts.sql'

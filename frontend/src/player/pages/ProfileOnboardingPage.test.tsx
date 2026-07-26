@@ -4,6 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../../auth/AuthProvider';
 import { AppRoutes } from '../../app/AppRoutes';
+import {
+  countDisplayNameGraphemes,
+  normalizeDisplayNamePresentation,
+} from './ProfileOnboardingPage';
 
 const csrfCookieName = ['XSRF', 'TOKEN'].join('-');
 const csrfValue = ['csrf', 'profile', 'value'].join('-');
@@ -154,5 +158,72 @@ describe('profile onboarding', () => {
     await userEvent.click(screen.getByRole('button', { name: /log out/i }));
 
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
+  });
+
+  it('keeps grapheme counting correct without Intl Segmenter', () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, 'Segmenter');
+    Object.defineProperty(Intl, 'Segmenter', { configurable: true, value: undefined });
+    try {
+      expect(countDisplayNameGraphemes('A\u0301nh')).toBe(3);
+      expect(countDisplayNameGraphemes('a\u0301'.repeat(24))).toBe(24);
+      expect(countDisplayNameGraphemes('e\u0301\u0323')).toBe(1);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(Intl, 'Segmenter', descriptor);
+      } else {
+        Reflect.deleteProperty(Intl, 'Segmenter');
+      }
+    }
+  });
+
+  it('normalizes Unicode whitespace for presentation without changing the raw input', async () => {
+    expect(normalizeDisplayNamePresentation('  Raid   Hero  ')).toBe('Raid Hero');
+    expect(normalizeDisplayNamePresentation('\u00A0Ra\u0301id\u2002\u00A0Hu\u0300ng\u00A0'))
+      .toBe('Ra\u0301id Hu\u0300ng');
+
+    installSessionFetch();
+    renderOnboarding();
+    const input = await screen.findByLabelText(/display name/i);
+    await userEvent.type(input, '\u00A0Raid\u2002\u00A0Hero\u00A0');
+
+    expect(input).toHaveValue('\u00A0Raid\u2002\u00A0Hero\u00A0');
+    expect(screen.getByText('Raid Hero')).toBeInTheDocument();
+    expect(screen.getByText('9/24')).toBeInTheDocument();
+  });
+
+  it('keeps the user logged out when an old onboarding response arrives late', async () => {
+    let releaseOnboarding!: () => void;
+    let markOnboardingStarted!: () => void;
+    const onboardingStarted = new Promise<void>((resolve) => {
+      markOnboardingStarted = resolve;
+    });
+    installSessionFetch(async () => {
+      markOnboardingStarted();
+      await new Promise<void>((resolve) => {
+        releaseOnboarding = resolve;
+      });
+      return jsonResponse({
+        ...incompleteUser.profile,
+        displayName: 'Late Hero',
+        onboardingStatus: 'COMPLETED',
+        version: 1,
+      });
+    });
+    renderOnboarding();
+    const input = await screen.findByLabelText(/display name/i);
+    await userEvent.type(input, 'Late Hero');
+    await userEvent.click(screen.getByRole('button', { name: /enter the raid camp/i }));
+    await onboardingStarted;
+
+    const logoutButton = screen.getByRole('button', { name: /log out/i });
+    expect(logoutButton).toBeEnabled();
+    await userEvent.click(logoutButton);
+    await waitFor(() => expect(window.location.pathname).toBe('/login'));
+    releaseOnboarding();
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /enter the camp/i })).toBeInTheDocument());
+    expect(window.location.pathname).toBe('/login');
+    expect(screen.queryByText(/late hero/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/raid lobby online/i)).not.toBeInTheDocument();
   });
 });
