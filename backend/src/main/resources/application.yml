@@ -59,11 +59,28 @@ springdoc:
     enabled: ${SWAGGER_ENABLED:true}
 
 app:
-  security:
+  auth:
     jwt:
       issuer: ${JWT_ISSUER:multiplayer-game}
-      access-secret: ${JWT_ACCESS_SECRET:replace-with-at-least-32-bytes}
-      refresh-secret: ${JWT_REFRESH_SECRET:replace-with-at-least-32-bytes}
+      private-key: ${JWT_PRIVATE_KEY:}
+      public-key: ${JWT_PUBLIC_KEY:}
+      access-token-ttl: 10m
+    refresh:
+      ttl: 14d
+      token-bytes: 48
+    cookie:
+      name: refresh_token
+      path: /api/auth
+      secure: ${AUTH_COOKIE_SECURE:false}
+      same-site: Lax
+    rate-limit:
+      key-secret: ${AUTH_RATE_LIMIT_KEY_SECRET:local-rate-limit-key-change-me}
+      login-ip-limit: ${AUTH_LOGIN_IP_LIMIT:20}
+      login-identity-limit: ${AUTH_LOGIN_IDENTITY_LIMIT:10}
+      register-ip-limit: ${AUTH_REGISTER_IP_LIMIT:10}
+      refresh-limit: ${AUTH_REFRESH_LIMIT:60}
+      window: ${AUTH_RATE_LIMIT_WINDOW:15m}
+      fail-closed: ${AUTH_RATE_LIMIT_FAIL_CLOSED:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 

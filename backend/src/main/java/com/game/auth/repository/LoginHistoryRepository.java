@@ -1,0 +1,51 @@
+package com.game.auth.repository;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.net.InetAddress;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.UUID;
+
+@Repository
+@edu.umd.cs.findbugs.annotations.SuppressFBWarnings(
+        value = "EI_EXPOSE_REP2",
+        justification = "Spring-managed JdbcTemplate is intentionally injected and not exposed")
+public class LoginHistoryRepository {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    public LoginHistoryRepository(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    public void record(UUID userId, String attemptedLogin, String ipAddress, String userAgent,
+                       boolean success, String reason) {
+        jdbcTemplate.update("""
+                insert into login_history (user_id, email_attempted, ip_address, user_agent_hash, success, failure_reason)
+                values (?, ?, ?::inet, ?, ?, ?)
+                """, userId, attemptedLogin, normalizeIp(ipAddress), hashUserAgent(userAgent), success, reason);
+    }
+
+    private String normalizeIp(String ipAddress) {
+        try {
+            return InetAddress.getByName(ipAddress).getHostAddress();
+        } catch (java.io.IOException exception) {
+            return null;
+        }
+    }
+
+    private String hashUserAgent(String userAgent) {
+        if (userAgent == null || userAgent.isBlank()) {
+            return null;
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(userAgent.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
+    }
+}

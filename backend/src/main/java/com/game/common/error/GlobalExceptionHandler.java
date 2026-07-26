@@ -2,9 +2,13 @@ package com.game.common.error;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
+import com.game.auth.service.AuthException;
+import com.game.auth.service.RateLimitException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -41,6 +45,24 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, "CONSTRAINT_VIOLATION", "Request constraint violation", request.getRequestURI());
     }
 
+    @ExceptionHandler(AuthException.class)
+    public ResponseEntity<ProblemDetail> handleAuth(AuthException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(exception.status(), exception.getMessage());
+        problem.setTitle(exception.code());
+        problem.setProperty("path", request.getRequestURI());
+        return ResponseEntity.status(exception.status()).body(problem);
+    }
+
+    @ExceptionHandler(RateLimitException.class)
+    public ResponseEntity<ProblemDetail> handleRateLimit(RateLimitException exception, HttpServletRequest request) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.TOO_MANY_REQUESTS, "Too many requests");
+        problem.setTitle("RATE_LIMITED");
+        problem.setProperty("path", request.getRequestURI());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()))
+                .body(problem);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception exception, HttpServletRequest request) {
         log.error("Unhandled exception at path={}", request.getRequestURI(), exception);
@@ -57,4 +79,3 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(Instant.now(), status.value(), code, message, path));
     }
 }
-
