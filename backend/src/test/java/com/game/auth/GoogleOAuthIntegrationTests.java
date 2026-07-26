@@ -15,8 +15,11 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -63,8 +66,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @Testcontainers
-@SpringBootTest
+@SpringBootTest(properties = "logging.level.org.springframework.web.servlet.DispatcherServlet=DEBUG")
 @AutoConfigureMockMvc
+@ExtendWith(OutputCaptureExtension.class)
 class GoogleOAuthIntegrationTests {
 
     private static final KeyPair TITANCORE_KEYS = TestKeys.generateRsa();
@@ -118,6 +122,18 @@ class GoogleOAuthIntegrationTests {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Test
+    void callbackRequestDoesNotLogSensitiveQueryParameters(CapturedOutput output) throws Exception {
+        String sensitiveMarker = UUID.randomUUID().toString();
+
+        mockMvc.perform(get("/api/auth/oauth/google/callback")
+                        .queryParam("state", sensitiveMarker)
+                        .queryParam("code", sensitiveMarker))
+                .andExpect(status().isFound());
+
+        assertThat(output.getAll()).doesNotContain(sensitiveMarker);
+    }
 
     @BeforeAll
     static void startGoogleServer() throws IOException {

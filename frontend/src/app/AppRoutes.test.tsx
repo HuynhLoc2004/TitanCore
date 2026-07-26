@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -24,13 +25,14 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
   });
 }
 
-function renderApp(path = '/login') {
+function renderApp(path = '/login', strict = false) {
   window.history.replaceState({}, '', path);
-  render(
+  const app = (
     <AuthProvider>
       <AppRoutes />
-    </AuthProvider>,
+    </AuthProvider>
   );
+  render(strict ? <StrictMode>{app}</StrictMode> : app);
 }
 
 function installSuccessfulSessionFetch() {
@@ -224,13 +226,37 @@ describe('auth routes', () => {
     expect(window.sessionStorage.length).toBe(0);
   });
 
-  it('does not duplicate OAuth callback restoration under strict remount-like rerenders', async () => {
+  it('restores the OAuth callback under React Strict Mode without duplicate requests', async () => {
     const { counts } = installSuccessfulSessionFetch();
+    let navigationCount = 0;
+    const countNavigation = () => {
+      navigationCount += 1;
+    };
+    window.addEventListener('popstate', countNavigation);
 
-    renderApp('/auth/oauth/callback?oauth=success');
+    try {
+      renderApp('/auth/oauth/callback?oauth=success', true);
 
-    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
-    expect(counts()).toEqual({ refreshCount: 1, meCount: 1 });
+      expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(window.location.pathname).toBe('/app');
+      expect(window.location.search).toBe('');
+      expect(navigationCount).toBe(1);
+      expect(counts()).toEqual({ refreshCount: 1, meCount: 1 });
+    } finally {
+      window.removeEventListener('popstate', countNavigation);
+    }
+  });
+
+  it('shows the safe callback failure under React Strict Mode and removes its parameters', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    renderApp('/auth/oauth/callback?oauth=failed&code=collision', true);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/local login first/i);
+    expect(window.location.pathname).toBe('/auth/oauth/callback');
+    expect(window.location.search).toBe('');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('shows a safe OAuth failure message and removes query parameters from history', async () => {

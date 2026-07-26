@@ -3,6 +3,10 @@ import { navigate } from '../../app/AppRoutes';
 import { useAuth } from '../useAuth';
 
 type CallbackState = 'loading' | 'failed';
+type CallbackResult = {
+  oauth: string | null;
+  code: string | null;
+};
 
 const SAFE_ERROR_MESSAGES: Record<string, string> = {
   cancelled: 'Google sign-in was cancelled. Your raid pass is still safe.',
@@ -22,24 +26,27 @@ export function OAuthCallbackPage() {
   const { restoreSession } = useAuth();
   const [state, setState] = useState<CallbackState>('loading');
   const [message, setMessage] = useState('Restoring your Google raid pass...');
-  const processedRef = useRef(false);
+  const callbackResultRef = useRef<CallbackResult | null>(null);
+  const restorePromiseRef = useRef<ReturnType<typeof restoreSession> | null>(null);
+  const navigatedRef = useRef(false);
+
+  if (callbackResultRef.current === null) {
+    const params = new URLSearchParams(window.location.search);
+    callbackResultRef.current = {
+      oauth: params.get('oauth'),
+      code: params.get('code'),
+    };
+  }
 
   useEffect(() => {
     let active = true;
-    if (processedRef.current) {
-      return () => {
-        active = false;
-      };
-    }
-    processedRef.current = true;
-
-    const params = new URLSearchParams(window.location.search);
-    const oauth = params.get('oauth');
-    const code = params.get('code');
+    const callbackResult = callbackResultRef.current;
     window.history.replaceState({}, '', '/auth/oauth/callback');
 
-    if (oauth !== 'success') {
-      const safeCode = code && FAILURE_CODES.has(code) ? code : 'failed';
+    if (callbackResult?.oauth !== 'success') {
+      const safeCode = callbackResult?.code && FAILURE_CODES.has(callbackResult.code)
+        ? callbackResult.code
+        : 'failed';
       setMessage(SAFE_ERROR_MESSAGES[safeCode]);
       setState('failed');
       return () => {
@@ -47,11 +54,13 @@ export function OAuthCallbackPage() {
       };
     }
 
-    restoreSession()
+    restorePromiseRef.current ??= restoreSession();
+    restorePromiseRef.current
       .then(() => {
-        if (!active) {
+        if (!active || navigatedRef.current) {
           return;
         }
+        navigatedRef.current = true;
         navigate('/app', { replace: true });
       })
       .catch(() => {
