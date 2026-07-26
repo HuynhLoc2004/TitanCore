@@ -6,12 +6,12 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.util.Base64;
 
-final class TestKeys {
+public final class TestKeys {
 
     private TestKeys() {
     }
 
-    static KeyPair generateRsa() {
+    public static KeyPair generateRsa() {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
             generator.initialize(2048);
@@ -21,11 +21,11 @@ final class TestKeys {
         }
     }
 
-    static String privatePem(KeyPair keyPair) {
+    public static String privatePem(KeyPair keyPair) {
         return pem("PRIVATE KEY", ((RSAPrivateKey) keyPair.getPrivate()).getEncoded());
     }
 
-    static String publicPem(KeyPair keyPair) {
+    public static String publicPem(KeyPair keyPair) {
         return pem("PUBLIC KEY", ((RSAPublicKey) keyPair.getPublic()).getEncoded());
     }
 

@@ -83,6 +83,7 @@ app:
       refresh-limit: ${AUTH_REFRESH_LIMIT:60}
       window: ${AUTH_RATE_LIMIT_WINDOW:15m}
       fail-closed: ${AUTH_RATE_LIMIT_FAIL_CLOSED:false}
+      login-history-key-secret: ${AUTH_LOGIN_HISTORY_KEY_SECRET:local-login-history-key-change-me}
     trusted-proxy:
       enabled: ${TRUSTED_PROXY_ENABLED:false}
       allowed-proxies: ${TRUSTED_PROXY_ALLOWED_PROXIES:}

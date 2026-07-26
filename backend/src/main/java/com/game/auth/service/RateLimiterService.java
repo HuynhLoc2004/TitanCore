@@ -1,7 +1,11 @@
 package com.game.auth.service;
 
 import com.game.auth.config.AuthProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
@@ -21,6 +25,7 @@ import java.util.Base64;
 public class RateLimiterService {
 
     private static final String HMAC_ALGORITHM = "HmacSHA256";
+    private static final Logger log = LoggerFactory.getLogger(RateLimiterService.class);
     private static final DefaultRedisScript<List> RATE_LIMIT_SCRIPT = new DefaultRedisScript<>("""
             local current = redis.call('INCR', KEYS[1])
             if current == 1 then
@@ -66,10 +71,11 @@ public class RateLimiterService {
                 long retryAfter = Math.max(1, Duration.ofMillis(ttlMillis == null ? 0 : ttlMillis).toSeconds());
                 throw new RateLimitException(retryAfter);
             }
-        } catch (RedisConnectionFailureException exception) {
+        } catch (RedisConnectionFailureException | RedisSystemException | QueryTimeoutException exception) {
             if (authProperties.rateLimit().failClosed()) {
                 throw new AuthException(HttpStatus.SERVICE_UNAVAILABLE, "RATE_LIMIT_UNAVAILABLE", "Authentication temporarily unavailable");
             }
+            log.warn("Authentication rate limiter unavailable; proceeding because fail-open is configured");
         }
     }
 

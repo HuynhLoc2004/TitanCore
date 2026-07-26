@@ -4,9 +4,17 @@ import com.game.auth.config.AuthProperties;
 import com.game.auth.model.UserAccount;
 import com.game.auth.model.UserStatus;
 import com.game.auth.security.ClientIpResolver;
+import com.game.auth.repository.AuditLogRepository;
+import com.game.auth.repository.LoginHistoryRepository;
+import com.game.auth.repository.PlayerFoundationRepository;
+import com.game.auth.repository.RefreshTokenRepository;
+import com.game.auth.repository.UserRepository;
+import com.game.auth.repository.UserSessionRepository;
 import com.game.auth.service.AuthException;
+import com.game.auth.service.AuthService;
 import com.game.auth.service.JwtService;
 import com.game.auth.service.RateLimiterService;
+import com.game.auth.service.RefreshTokenGenerator;
 import com.game.auth.service.TokenHashService;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -17,10 +25,12 @@ import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.env.StandardEnvironment;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.security.KeyPair;
 import java.time.Clock;
@@ -34,6 +44,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AuthUnitTests {
@@ -65,7 +76,7 @@ class AuthUnitTests {
         KeyPair keys = TestKeys.generateRsa();
         AuthProperties properties = properties(TestKeys.privatePem(keys), TestKeys.publicPem(keys), Duration.ofMinutes(10));
         Clock clock = Clock.fixed(Instant.parse("2026-07-22T00:00:00Z"), ZoneOffset.UTC);
-        JwtService service = new JwtService(properties, clock, new StandardEnvironment());
+        JwtService service = new JwtService(properties, clock);
         UUID sessionId = UUID.randomUUID();
         UserAccount user = new UserAccount(UUID.randomUUID(), "a@example.com", "alpha", "hash",
                 UserStatus.ACTIVE, "PLAYER", null, null);
@@ -83,7 +94,7 @@ class AuthUnitTests {
     void jwtRejectsExpiredToken() {
         KeyPair keys = TestKeys.generateRsa();
         AuthProperties properties = properties(TestKeys.privatePem(keys), TestKeys.publicPem(keys), Duration.ofMillis(1));
-        JwtService service = new JwtService(properties, Clock.systemUTC(), new StandardEnvironment());
+        JwtService service = new JwtService(properties, Clock.systemUTC());
         UserAccount user = new UserAccount(UUID.randomUUID(), "a@example.com", "alpha", "hash",
                 UserStatus.ACTIVE, "PLAYER", null, null);
 
@@ -100,7 +111,7 @@ class AuthUnitTests {
         KeyPair keys = TestKeys.generateRsa();
         Clock clock = Clock.fixed(Instant.parse("2026-07-22T00:00:00Z"), ZoneOffset.UTC);
         AuthProperties properties = properties(TestKeys.privatePem(keys), TestKeys.publicPem(keys), Duration.ofMinutes(10));
-        JwtService service = new JwtService(properties, clock, new StandardEnvironment());
+        JwtService service = new JwtService(properties, clock);
 
         assertThatThrownBy(() -> service.validate(hs256Token(clock.instant()))).isInstanceOf(AuthException.class);
         assertThatThrownBy(() -> service.validate(plainToken(clock.instant()))).isInstanceOf(AuthException.class);
@@ -143,16 +154,76 @@ class AuthUnitTests {
     }
 
     @Test
+    void loginPerformsPasswordHashWorkForUnknownAndExistingUsers() {
+        UserRepository userRepository = mock(UserRepository.class);
+        LoginHistoryRepository loginHistoryRepository = mock(LoginHistoryRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        AuthService service = authService(userRepository, loginHistoryRepository, passwordEncoder);
+        com.game.auth.dto.LoginRequest missing = new com.game.auth.dto.LoginRequest(
+                "missing@example.com", "very-secure-password", "Browser");
+
+        assertThatThrownBy(() -> service.login(missing, new AuthService.RequestContext("127.0.0.1", "ua")))
+                .isInstanceOf(AuthException.class)
+                .hasMessage("Invalid credentials");
+        verify(passwordEncoder).matches(org.mockito.ArgumentMatchers.eq("very-secure-password"),
+                org.mockito.ArgumentMatchers.anyString());
+
+        UserAccount user = new UserAccount(UUID.randomUUID(), "a@example.com", "alpha", "$2a$12$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                UserStatus.ACTIVE, "PLAYER", null, null);
+        when(userRepository.findByLogin("a@example.com")).thenReturn(java.util.Optional.of(user));
+        assertThatThrownBy(() -> service.login(new com.game.auth.dto.LoginRequest(
+                "a@example.com", "very-secure-password", "Browser"), new AuthService.RequestContext("127.0.0.1", "ua")))
+                .isInstanceOf(AuthException.class)
+                .hasMessage("Invalid credentials");
+        verify(passwordEncoder).matches(org.mockito.ArgumentMatchers.eq("very-secure-password"),
+                org.mockito.ArgumentMatchers.eq(user.passwordHash()));
+    }
+
+    @Test
+    void rateLimiterHandlesTimeoutAndScriptInfrastructureFailuresWithoutMaskingThresholds() {
+        StringRedisTemplate timeoutRedis = redisFailure(new QueryTimeoutException("timeout"));
+        new RateLimiterService(timeoutRedis, properties(false)).checkLogin("127.0.0.1", "alpha@example.com");
+        assertThatThrownBy(() -> new RateLimiterService(timeoutRedis, properties(true))
+                .checkLogin("127.0.0.1", "alpha@example.com"))
+                .isInstanceOf(AuthException.class)
+                .hasMessage("Authentication temporarily unavailable");
+
+        StringRedisTemplate scriptRedis = redisFailure(new RedisSystemException("script failed", new RuntimeException("down")));
+        new RateLimiterService(scriptRedis, properties(false)).checkLogin("127.0.0.1", "alpha@example.com");
+        assertThatThrownBy(() -> new RateLimiterService(scriptRedis, properties(true))
+                .checkLogin("127.0.0.1", "alpha@example.com"))
+                .isInstanceOf(AuthException.class)
+                .hasMessage("Authentication temporarily unavailable");
+
+        StringRedisTemplate thresholdRedis = mock(StringRedisTemplate.class);
+        when(thresholdRedis.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.<String>any()))
+                .thenReturn(List.of(99L, 120_000L));
+        assertThatThrownBy(() -> new RateLimiterService(thresholdRedis, properties(false))
+                .checkLogin("127.0.0.1", "alpha@example.com"))
+                .isInstanceOf(com.game.auth.service.RateLimitException.class);
+    }
+
+    @Test
     void clientIpResolverIgnoresForwardedHeaderUnlessRemotePeerIsTrusted() {
         HttpServletRequest direct = request("203.0.113.10", "198.51.100.55");
         assertThat(new ClientIpResolver(properties(false)).resolve(direct)).isEqualTo("203.0.113.10");
 
         AuthProperties trusted = properties(false, true, List.of("203.0.113.10"));
         assertThat(new ClientIpResolver(trusted).resolve(direct)).isEqualTo("198.51.100.55");
+        assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "2001:db8::1"))).isEqualTo("2001:db8:0:0:0:0:0:1");
         assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "198.51.100.55, 10.0.0.1")))
                 .isEqualTo("203.0.113.10");
         assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "bad ip")))
                 .isEqualTo("203.0.113.10");
+        assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "example.com")))
+                .isEqualTo("203.0.113.10");
+        assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "198.51.100.999")))
+                .isEqualTo("203.0.113.10");
+        assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "[2001:db8::1]")))
+                .isEqualTo("203.0.113.10");
+        assertThat(new ClientIpResolver(properties(false, true, List.of("203.0.113.0/24")))
+                .resolve(request("203.0.113.10", "198.51.100.55"))).isEqualTo("198.51.100.55");
     }
 
     private AuthProperties properties(String privateKey, String publicKey, Duration accessTtl) {
@@ -161,7 +232,8 @@ class AuthUnitTests {
                         accessTtl, Duration.ofSeconds(30)),
                 new AuthProperties.Refresh(Duration.ofDays(14), 48),
                 new AuthProperties.Cookie("refresh_token", "/api/auth", false, "Lax"),
-                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15), false),
+                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15),
+                        false, "login-history-secret"),
                 new AuthProperties.TrustedProxy(false, List.of())
         );
     }
@@ -175,8 +247,36 @@ class AuthUnitTests {
                 new AuthProperties.Jwt("test", "titancore-game-client", "", "", Duration.ofMinutes(10), Duration.ofSeconds(30)),
                 new AuthProperties.Refresh(Duration.ofDays(14), 48),
                 new AuthProperties.Cookie("refresh_token", "/api/auth", false, "Lax"),
-                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15), failClosed),
+                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15),
+                        failClosed, "login-history-secret"),
                 new AuthProperties.TrustedProxy(trustedProxyEnabled, trustedProxies)
+        );
+    }
+
+    private StringRedisTemplate redisFailure(RuntimeException exception) {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        when(redisTemplate.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.<String>any()))
+                .thenThrow(exception);
+        return redisTemplate;
+    }
+
+    private AuthService authService(UserRepository userRepository, LoginHistoryRepository loginHistoryRepository,
+                                    PasswordEncoder passwordEncoder) {
+        return new AuthService(
+                userRepository,
+                mock(PlayerFoundationRepository.class),
+                mock(RefreshTokenRepository.class),
+                mock(UserSessionRepository.class),
+                loginHistoryRepository,
+                mock(AuditLogRepository.class),
+                passwordEncoder,
+                mock(JwtService.class),
+                mock(RefreshTokenGenerator.class),
+                mock(TokenHashService.class),
+                mock(RateLimiterService.class),
+                properties(false),
+                Clock.systemUTC()
         );
     }
 

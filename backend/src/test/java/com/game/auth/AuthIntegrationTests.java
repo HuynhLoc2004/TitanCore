@@ -14,6 +14,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -103,7 +104,7 @@ class AuthIntegrationTests {
     void duplicateCaseInsensitiveEmailAndUsernameAreRejectedWithoutPartialFoundation() throws Exception {
         register("duplicate@example.com", "duplicate");
 
-        mockMvc.perform(post("/api/auth/register")
+        mockMvc.perform(withCsrf(post("/api/auth/register"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -115,7 +116,7 @@ class AuthIntegrationTests {
                                 """))
                 .andExpect(status().isConflict());
 
-        mockMvc.perform(post("/api/auth/register")
+        mockMvc.perform(withCsrf(post("/api/auth/register"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -173,7 +174,7 @@ class AuthIntegrationTests {
         List<String> statuses = List.of("BANNED", "LOCKED", "DELETED");
         for (String accountStatus : statuses) {
             jdbcTemplate.update("update users set status = ? where email = ?", accountStatus, "status@example.com");
-            mockMvc.perform(post("/api/auth/login")
+            mockMvc.perform(withCsrf(post("/api/auth/login"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -189,7 +190,7 @@ class AuthIntegrationTests {
     @Test
     void rateLimitUsesPrivateRedisKeysAndReturnsRetryAfter() throws Exception {
         for (int i = 0; i < 4; i++) {
-            mockMvc.perform(post("/api/auth/login")
+            mockMvc.perform(withCsrf(post("/api/auth/login"))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
                                     {
@@ -214,6 +215,26 @@ class AuthIntegrationTests {
         AuthResult auth = register("csrf@example.com", "csrfuser");
         CsrfMaterial csrf = csrf();
 
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("csrf@example.com")))
+                .andExpect(status().isForbidden())
+                .andExpect(result -> assertThat(result.getResponse().getHeaders(HttpHeaders.SET_COOKIE))
+                        .noneMatch(cookie -> cookie.startsWith("refresh_token=")));
+        mockMvc.perform(post("/api/auth/login")
+                        .cookie(csrf.cookie())
+                        .header("X-XSRF-TOKEN", "wrong")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("csrf@example.com")))
+                .andExpect(status().isForbidden())
+                .andExpect(result -> assertThat(result.getResponse().getHeaders(HttpHeaders.SET_COOKIE))
+                        .noneMatch(cookie -> cookie.startsWith("refresh_token=")));
+        mockMvc.perform(withCsrf(post("/api/auth/login"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("csrf@example.com")))
+                .andExpect(status().isOk())
+                .andExpect(header().exists(HttpHeaders.SET_COOKIE));
+
         mockMvc.perform(post("/api/auth/refresh").cookie(cookie(auth.refreshCookie())))
                 .andExpect(status().isForbidden());
         mockMvc.perform(post("/api/auth/refresh")
@@ -237,6 +258,14 @@ class AuthIntegrationTests {
                         .header(HttpHeaders.ORIGIN, "https://evil.example")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
                 .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/auth/login")
+                        .header(HttpHeaders.ORIGIN, "https://evil.example")
+                        .contentType(MediaType.APPLICATION_JSON)
+                .content(loginJson("csrf@example.com")))
+                .andExpect(status().isForbidden())
+                .andExpect(result -> assertThat(result.getResponse().getHeaders(HttpHeaders.SET_COOKIE))
+                        .noneMatch(cookie -> cookie.startsWith("refresh_token=")));
     }
 
     @Test
@@ -293,7 +322,7 @@ class AuthIntegrationTests {
     @Test
     void untrustedForwardedForCannotSpoofRateLimitOrAuditIp() throws Exception {
         for (int i = 0; i < 4; i++) {
-            mockMvc.perform(post("/api/auth/login")
+            mockMvc.perform(withCsrf(post("/api/auth/login"))
                             .with(request -> {
                                 request.setRemoteAddr("203.0.113.77");
                                 return request;
@@ -313,7 +342,7 @@ class AuthIntegrationTests {
     }
 
     private AuthResult register(String email, String username) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/auth/register")
+        MvcResult result = mockMvc.perform(withCsrf(post("/api/auth/register"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -329,18 +358,22 @@ class AuthIntegrationTests {
     }
 
     private AuthResult login(String login) throws Exception {
-        MvcResult result = mockMvc.perform(post("/api/auth/login")
+        MvcResult result = mockMvc.perform(withCsrf(post("/api/auth/login"))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "login": "%s",
-                                  "password": "very-secure-password",
-                                  "deviceLabel": "Browser"
-                                }
-                                """.formatted(login)))
+                        .content(loginJson(login)))
                 .andExpect(status().isOk())
                 .andReturn();
         return authResult(result);
+    }
+
+    private String loginJson(String login) {
+        return """
+                {
+                  "login": "%s",
+                  "password": "very-secure-password",
+                  "deviceLabel": "Browser"
+                }
+                """.formatted(login);
     }
 
     private AuthResult authResult(MvcResult result) throws Exception {
@@ -365,6 +398,11 @@ class AuthIntegrationTests {
         assertThat(setCookie).isNotNull();
         jakarta.servlet.http.Cookie cookie = cookie(setCookie);
         return new CsrfMaterial(cookie, cookie.getValue());
+    }
+
+    private MockHttpServletRequestBuilder withCsrf(MockHttpServletRequestBuilder builder) throws Exception {
+        CsrfMaterial csrf = csrf();
+        return builder.cookie(csrf.cookie()).header("X-XSRF-TOKEN", csrf.value());
     }
 
     private String bearer(String token) {

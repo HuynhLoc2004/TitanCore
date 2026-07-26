@@ -62,7 +62,8 @@ public class LoginHistoryRepository {
         }
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(authProperties.rateLimit().keySecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.init(new SecretKeySpec(authProperties.rateLimit().loginHistoryKeySecret().getBytes(StandardCharsets.UTF_8),
+                    "HmacSHA256"));
             return HexFormat.of().formatHex(mac.doFinal(attemptedLogin.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception exception) {
             throw new IllegalStateException("Unable to hash attempted login", exception);

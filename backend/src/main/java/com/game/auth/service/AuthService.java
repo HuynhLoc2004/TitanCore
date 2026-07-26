@@ -37,6 +37,8 @@ import java.util.UUID;
 public class AuthService {
 
     private static final String UNIFORM_FAILURE = "Invalid credentials";
+    private static final String DUMMY_BCRYPT_HASH =
+            "$2a$12$C6UzMDM.H6dfI/f/IKcEeOeeWc4yQxY7G8Sh2by3F6r9g3N0p2XjW";
 
     private final UserRepository userRepository;
     private final PlayerFoundationRepository playerFoundationRepository;
@@ -96,7 +98,9 @@ public class AuthService {
         rateLimiterService.checkLogin(context.ipAddress(), request.login());
         String login = normalize(request.login());
         UserAccount user = userRepository.findByLogin(login).orElse(null);
-        if (user == null || user.passwordHash() == null || !passwordEncoder.matches(request.password(), user.passwordHash())) {
+        String passwordHash = user == null || user.passwordHash() == null ? DUMMY_BCRYPT_HASH : user.passwordHash();
+        boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
+        if (user == null || user.passwordHash() == null || !passwordMatches) {
             loginHistoryRepository.record(user == null ? null : user.id(), login, context.ipAddress(),
                     context.userAgent(), false, "BAD_CREDENTIALS");
             throw new AuthException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", UNIFORM_FAILURE);

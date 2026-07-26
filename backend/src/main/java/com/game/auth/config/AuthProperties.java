@@ -50,7 +50,8 @@ public record AuthProperties(
             @Min(1) int registerIpLimit,
             @Min(1) int refreshLimit,
             @NotNull Duration window,
-            boolean failClosed
+            boolean failClosed,
+            @NotBlank String loginHistoryKeySecret
     ) {
     }
 

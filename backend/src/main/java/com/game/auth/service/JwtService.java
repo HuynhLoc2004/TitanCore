@@ -9,7 +9,6 @@ import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -22,7 +21,6 @@ import java.text.ParseException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
@@ -39,11 +37,11 @@ public class JwtService {
     private final RSAPrivateKey privateKey;
     private final RSAPublicKey publicKey;
 
-    public JwtService(AuthProperties authProperties, Clock clock, Environment environment) {
+    public JwtService(AuthProperties authProperties, Clock clock) {
         this.authProperties = authProperties;
         this.clock = clock;
-        this.privateKey = loadPrivateKey(authProperties.jwt().privateKey(), environment);
-        this.publicKey = loadPublicKey(authProperties.jwt().publicKey(), environment);
+        this.privateKey = loadPrivateKey(authProperties.jwt().privateKey());
+        this.publicKey = loadPublicKey(authProperties.jwt().publicKey());
     }
 
     public IssuedAccessToken issue(UserAccount user, UUID sessionId) {
@@ -126,11 +124,7 @@ public class JwtService {
         return new AuthException(org.springframework.http.HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized");
     }
 
-    private RSAPrivateKey loadPrivateKey(String pem, Environment environment) {
-        if (!StringUtils.hasText(pem)) {
-            requireKeysOutsideNonProduction(environment);
-            return null;
-        }
+    private RSAPrivateKey loadPrivateKey(String pem) {
         try {
             byte[] encoded = decodePem(pem, "PRIVATE KEY");
             return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(encoded));
@@ -139,23 +133,12 @@ public class JwtService {
         }
     }
 
-    private RSAPublicKey loadPublicKey(String pem, Environment environment) {
-        if (!StringUtils.hasText(pem)) {
-            requireKeysOutsideNonProduction(environment);
-            return null;
-        }
+    private RSAPublicKey loadPublicKey(String pem) {
         try {
             byte[] encoded = decodePem(pem, "PUBLIC KEY");
             return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(encoded));
         } catch (Exception exception) {
             throw new IllegalStateException("Invalid JWT public key configuration", exception);
-        }
-    }
-
-    private void requireKeysOutsideNonProduction(Environment environment) {
-        boolean prod = Arrays.asList(environment.getActiveProfiles()).contains("prod");
-        if (prod) {
-            throw new IllegalStateException("JWT RS256 key configuration is required in production");
         }
     }
 
