@@ -44,7 +44,8 @@ class FlywaySchemaIntegrationTests {
             "reward_ledger",
             "notifications",
             "audit_logs",
-            "outbox_events"
+            "outbox_events",
+            "user_oauth_accounts"
     );
 
     private static final List<String> DEFERRED_TABLES = List.of(
@@ -114,6 +115,14 @@ class FlywaySchemaIntegrationTests {
         assertThat(indexExists("notifications_player_unread_idx")).isTrue();
         assertThat(indexIsPartial("notifications_player_unread_idx")).isTrue();
         assertThat(indexExists("notifications_player_created_idx")).isTrue();
+        assertThat(indexExists("user_oauth_accounts_user_idx")).isTrue();
+        assertThat(indexExists("user_oauth_accounts_email_idx")).isTrue();
+        assertThat(constraintExists("user_oauth_accounts_provider_subject_uq")).isTrue();
+        assertThat(constraintExists("user_oauth_accounts_user_provider_uq")).isTrue();
+        assertThat(constraintExists("user_oauth_accounts_provider_ck")).isTrue();
+        assertThat(constraintExists("user_oauth_accounts_provider_subject_ck")).isTrue();
+        assertThat(constraintExists("user_oauth_accounts_email_normalized_ck")).isTrue();
+        assertThat(constraintExists("user_oauth_accounts_timestamp_order_ck")).isTrue();
     }
 
     @Test
@@ -298,6 +307,52 @@ class FlywaySchemaIntegrationTests {
         )).hasMessageContaining("reward_ledger_grant_shape_ck");
     }
 
+    @Test
+    void enforcesOAuthIdentitySchemaIntegrity() {
+        UUID userId = insertUser("oauth-user@example.com", "oauthuser");
+        UUID secondUserId = insertUser("oauth-second@example.com", "oauthsecond");
+
+        insertOAuthAccount(userId, "GOOGLE", "google-subject-1", "oauth-user@example.com");
+
+        assertThatThrownBy(() -> insertOAuthAccount(secondUserId, "GOOGLE", "google-subject-1",
+                "oauth-second@example.com"))
+                .hasMessageContaining("user_oauth_accounts_provider_subject_uq");
+
+        assertThatThrownBy(() -> insertOAuthAccount(userId, "GOOGLE", "google-subject-2",
+                "oauth-user@example.com"))
+                .hasMessageContaining("user_oauth_accounts_user_provider_uq");
+
+        assertThatThrownBy(() -> insertOAuthAccount(secondUserId, "google", "google-subject-3",
+                "oauth-second@example.com"))
+                .hasMessageContaining("user_oauth_accounts_provider_ck");
+
+        assertThatThrownBy(() -> insertOAuthAccount(secondUserId, "GOOGLE", "   ",
+                "oauth-second@example.com"))
+                .hasMessageContaining("user_oauth_accounts_provider_subject_ck");
+
+        assertThatThrownBy(() -> insertOAuthAccount(secondUserId, "GOOGLE", "google-subject-4",
+                "OAuth-Second@Example.com"))
+                .hasMessageContaining("user_oauth_accounts_email_normalized_ck");
+
+        assertThatThrownBy(() -> insertOAuthAccount(UUID.fromString("00000000-0000-0000-0000-000000000099"),
+                "GOOGLE", "missing-user-subject", "missing@example.com"))
+                .hasMessageContaining("user_oauth_accounts_user_fk");
+
+        assertThatThrownBy(() -> jdbcTemplate.update("delete from users where id = ?", userId))
+                .hasMessageContaining("user_oauth_accounts_user_fk");
+
+        assertThatThrownBy(() -> insertOAuthAccount(secondUserId, "MICROSOFT", "microsoft-subject",
+                "oauth-second@example.com"))
+                .hasMessageContaining("user_oauth_accounts_provider_ck");
+
+        assertThat(providerSubjectUniqueColumns()).containsExactly("provider", "provider_subject");
+        assertThat(userProviderUniqueColumns()).containsExactly("user_id", "provider");
+        assertThat(columnExists("user_oauth_accounts", "provider_access_token")).isFalse();
+        assertThat(columnExists("user_oauth_accounts", "provider_refresh_token")).isFalse();
+        assertThat(columnExists("user_oauth_accounts", "access_token")).isFalse();
+        assertThat(columnExists("user_oauth_accounts", "refresh_token")).isFalse();
+    }
+
     private static boolean tableExists(String tableName) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*)
@@ -337,6 +392,36 @@ class FlywaySchemaIntegrationTests {
         return count != null && count == 1;
     }
 
+    private static boolean columnExists(String tableName, String columnName) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*)
+                from information_schema.columns
+                where table_schema = 'public'
+                and table_name = ?
+                and column_name = ?
+                """, Integer.class, tableName, columnName);
+        return count != null && count == 1;
+    }
+
+    private static List<String> providerSubjectUniqueColumns() {
+        return uniqueConstraintColumns("user_oauth_accounts_provider_subject_uq");
+    }
+
+    private static List<String> userProviderUniqueColumns() {
+        return uniqueConstraintColumns("user_oauth_accounts_user_provider_uq");
+    }
+
+    private static List<String> uniqueConstraintColumns(String constraintName) {
+        return jdbcTemplate.queryForList("""
+                select a.attname
+                from pg_constraint c
+                join unnest(c.conkey) with ordinality as cols(attnum, ord) on true
+                join pg_attribute a on a.attrelid = c.conrelid and a.attnum = cols.attnum
+                where c.conname = ?
+                order by cols.ord
+                """, String.class, constraintName);
+    }
+
     private static boolean indexIsPartial(String indexName) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
                 select i.indpred is not null
@@ -352,6 +437,15 @@ class FlywaySchemaIntegrationTests {
                 values (?, ?, ?)
                 returning id
                 """, UUID.class, email, username, "hash");
+    }
+
+    private static UUID insertOAuthAccount(UUID userId, String provider, String providerSubject, String email) {
+        return jdbcTemplate.queryForObject("""
+                insert into user_oauth_accounts (
+                    user_id, provider, provider_subject, email_at_link_time, provider_email_verified
+                ) values (?, ?, ?, ?, true)
+                returning id
+                """, UUID.class, userId, provider, providerSubject, email);
     }
 
     private static UUID insertPlayer(UUID userId, String displayName) {
