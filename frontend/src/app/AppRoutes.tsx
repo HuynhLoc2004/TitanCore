@@ -3,8 +3,9 @@ import { LoginPage } from '../auth/pages/LoginPage';
 import { OAuthCallbackPage } from '../auth/pages/OAuthCallbackPage';
 import { RegisterPage } from '../auth/pages/RegisterPage';
 import { useAuth } from '../auth/useAuth';
+import { ProfileOnboardingPage } from '../player/pages/ProfileOnboardingPage';
 
-type Route = '/login' | '/register' | '/app' | '/auth/oauth/callback';
+type Route = '/login' | '/register' | '/onboarding' | '/app' | '/auth/oauth/callback';
 
 function currentRoute(): Route {
   const path = window.location.pathname;
@@ -16,6 +17,9 @@ function currentRoute(): Route {
   }
   if (path === '/app') {
     return '/app';
+  }
+  if (path === '/onboarding') {
+    return '/onboarding';
   }
   return '/login';
 }
@@ -40,13 +44,16 @@ export function AppRoutes() {
   }, []);
 
   useEffect(() => {
-    if (status === 'authenticated' && route !== '/app' && route !== '/auth/oauth/callback') {
-      navigate('/app');
+    if (status === 'authenticated' && user && route !== '/auth/oauth/callback') {
+      const destination = user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app';
+      if (route !== destination) {
+        navigate(destination, { replace: true });
+      }
     }
-    if (status === 'anonymous' && route === '/app') {
-      navigate('/login');
+    if (status === 'anonymous' && (route === '/app' || route === '/onboarding')) {
+      navigate('/login', { replace: true });
     }
-  }, [route, status]);
+  }, [route, status, user]);
 
   if (route === '/auth/oauth/callback') {
     return <OAuthCallbackPage />;
@@ -54,6 +61,11 @@ export function AppRoutes() {
 
   if (status === 'bootstrapping') {
     return <BootstrapScreen />;
+  }
+
+  if (status === 'authenticated' && user?.profile.onboardingStatus === 'REQUIRED'
+      && route === '/onboarding') {
+    return <ProfileOnboardingPage />;
   }
 
   if (status === 'authenticated' && route !== '/app') {
@@ -72,7 +84,7 @@ export function AppRoutes() {
           <div className="tc-dashboard">
             <div>
               <p className="tc-eyebrow">Raid lobby online</p>
-              <h1>Welcome back, {user.username}</h1>
+              <h1>Welcome back, {user.profile.displayName}</h1>
               <p>
                 Your war banner is ready. The boss room opens in the next approved gameplay phase.
               </p>

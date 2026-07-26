@@ -9,9 +9,14 @@ import { AppRoutes, navigate } from './AppRoutes';
 const user = {
   id: '3d2c4040-66f6-45b7-9235-1d5d7a4d4586',
   email: 'hero@example.com',
-  username: 'hero',
   role: 'PLAYER',
   status: 'ACTIVE',
+  profile: {
+    id: 'b8953c61-67cb-44bf-ac85-0ab9d620d510',
+    displayName: 'Hero',
+    onboardingStatus: 'COMPLETED' as const,
+    version: 1,
+  },
 };
 const csrfCookieName = ['XSRF', 'TOKEN'].join('-');
 const csrfValue = ['csrf', 'test', 'value'].join('-');
