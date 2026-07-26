@@ -16,7 +16,8 @@ public record AuthProperties(
         @Valid @NotNull Refresh refresh,
         @Valid @NotNull Cookie cookie,
         @Valid @NotNull RateLimit rateLimit,
-        @Valid @NotNull TrustedProxy trustedProxy
+        @Valid @NotNull TrustedProxy trustedProxy,
+        @Valid @NotNull OAuth oauth
 ) {
 
     public record Jwt(
@@ -62,5 +63,25 @@ public record AuthProperties(
         public TrustedProxy {
             allowedProxies = java.util.List.copyOf(allowedProxies);
         }
+    }
+
+    public record OAuth(
+            @NotNull Duration stateTtl,
+            @NotNull Duration providerTimeout,
+            @NotBlank String successRedirectUri,
+            @NotBlank String failureRedirectUri,
+            @Valid @NotNull Google google
+    ) {
+    }
+
+    public record Google(
+            String clientId,
+            String clientSecret,
+            @NotBlank String redirectUri,
+            @NotBlank String authorizationUri,
+            @NotBlank String tokenUri,
+            @NotBlank String jwksUri,
+            @NotBlank String issuer
+    ) {
     }
 }

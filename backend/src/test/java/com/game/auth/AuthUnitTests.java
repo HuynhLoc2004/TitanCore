@@ -234,7 +234,8 @@ class AuthUnitTests {
                 new AuthProperties.Cookie("refresh_token", "/api/auth", false, "Lax"),
                 new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15),
                         false, "login-history-secret"),
-                new AuthProperties.TrustedProxy(false, List.of())
+                new AuthProperties.TrustedProxy(false, List.of()),
+                oauthProperties()
         );
     }
 
@@ -249,7 +250,26 @@ class AuthUnitTests {
                 new AuthProperties.Cookie("refresh_token", "/api/auth", false, "Lax"),
                 new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15),
                         failClosed, "login-history-secret"),
-                new AuthProperties.TrustedProxy(trustedProxyEnabled, trustedProxies)
+                new AuthProperties.TrustedProxy(trustedProxyEnabled, trustedProxies),
+                oauthProperties()
+        );
+    }
+
+    private AuthProperties.OAuth oauthProperties() {
+        return new AuthProperties.OAuth(
+                Duration.ofMinutes(5),
+                Duration.ofSeconds(5),
+                "http://localhost:5173/app",
+                "http://localhost:5173/login",
+                new AuthProperties.Google(
+                        "google-client-id",
+                        "google-client-secret",
+                        "http://localhost:8080/api/auth/oauth/google/callback",
+                        "https://accounts.google.com/o/oauth2/v2/auth",
+                        "https://oauth2.googleapis.com/token",
+                        "https://www.googleapis.com/oauth2/v3/certs",
+                        "https://accounts.google.com"
+                )
         );
     }
 
@@ -270,6 +290,7 @@ class AuthUnitTests {
                 mock(UserSessionRepository.class),
                 loginHistoryRepository,
                 mock(AuditLogRepository.class),
+                mock(com.game.auth.repository.UserOAuthAccountRepository.class),
                 passwordEncoder,
                 mock(JwtService.class),
                 mock(RefreshTokenGenerator.class),

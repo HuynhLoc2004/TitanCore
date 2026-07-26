@@ -63,6 +63,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/oauth/google/start",
+                                "/api/auth/oauth/google/callback").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
                         .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()

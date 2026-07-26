@@ -56,6 +56,10 @@ public class RateLimiterService {
         check("register:ip", ipAddress, authProperties.rateLimit().registerIpLimit());
     }
 
+    public void checkOAuth(String ipAddress, String stateOrProvider) {
+        check("oauth", ipAddress + ":" + normalize(stateOrProvider), authProperties.rateLimit().refreshLimit());
+    }
+
     public void checkRefresh(String ipAddress, String sessionKey) {
         check("refresh", ipAddress + ":" + sessionKey, authProperties.rateLimit().refreshLimit());
     }

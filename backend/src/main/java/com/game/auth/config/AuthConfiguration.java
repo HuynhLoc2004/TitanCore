@@ -34,6 +34,11 @@ public class AuthConfiguration {
             if (Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
                 requireProductionSecret(authProperties.rateLimit().keySecret(), "AUTH_RATE_LIMIT_KEY_SECRET");
                 requireProductionSecret(authProperties.rateLimit().loginHistoryKeySecret(), "AUTH_LOGIN_HISTORY_KEY_SECRET");
+                requireText(authProperties.oauth().google().clientId(), "GOOGLE_CLIENT_ID");
+                requireText(authProperties.oauth().google().clientSecret(), "GOOGLE_CLIENT_SECRET");
+                requireText(authProperties.oauth().google().redirectUri(), "GOOGLE_REDIRECT_URI");
+                requireText(authProperties.oauth().successRedirectUri(), "OAUTH_SUCCESS_REDIRECT_URI");
+                requireText(authProperties.oauth().failureRedirectUri(), "OAUTH_FAILURE_REDIRECT_URI");
             }
         };
     }

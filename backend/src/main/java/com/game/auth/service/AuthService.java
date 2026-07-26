@@ -7,6 +7,8 @@ import com.game.auth.dto.LoginRequest;
 import com.game.auth.dto.RegisterRequest;
 import com.game.auth.dto.SessionResponse;
 import com.game.auth.dto.TokenPair;
+import com.game.auth.model.GoogleIdentity;
+import com.game.auth.model.OAuthAccountRecord;
 import com.game.auth.model.RefreshTokenRecord;
 import com.game.auth.model.UserAccount;
 import com.game.auth.model.UserSessionRecord;
@@ -15,6 +17,7 @@ import com.game.auth.repository.AuditLogRepository;
 import com.game.auth.repository.LoginHistoryRepository;
 import com.game.auth.repository.PlayerFoundationRepository;
 import com.game.auth.repository.RefreshTokenRepository;
+import com.game.auth.repository.UserOAuthAccountRepository;
 import com.game.auth.repository.UserRepository;
 import com.game.auth.repository.UserSessionRepository;
 import org.springframework.dao.DuplicateKeyException;
@@ -46,6 +49,7 @@ public class AuthService {
     private final UserSessionRepository userSessionRepository;
     private final LoginHistoryRepository loginHistoryRepository;
     private final AuditLogRepository auditLogRepository;
+    private final UserOAuthAccountRepository userOAuthAccountRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenGenerator refreshTokenGenerator;
@@ -57,6 +61,7 @@ public class AuthService {
     public AuthService(UserRepository userRepository, PlayerFoundationRepository playerFoundationRepository,
                        RefreshTokenRepository refreshTokenRepository, UserSessionRepository userSessionRepository,
                        LoginHistoryRepository loginHistoryRepository, AuditLogRepository auditLogRepository,
+                       UserOAuthAccountRepository userOAuthAccountRepository,
                        PasswordEncoder passwordEncoder, JwtService jwtService,
                        RefreshTokenGenerator refreshTokenGenerator, TokenHashService tokenHashService,
                        RateLimiterService rateLimiterService, AuthProperties authProperties, Clock clock) {
@@ -66,6 +71,7 @@ public class AuthService {
         this.userSessionRepository = userSessionRepository;
         this.loginHistoryRepository = loginHistoryRepository;
         this.auditLogRepository = auditLogRepository;
+        this.userOAuthAccountRepository = userOAuthAccountRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokenGenerator = refreshTokenGenerator;
@@ -114,6 +120,50 @@ public class AuthService {
         userRepository.markLastLogin(user.id(), clock.instant());
         audit(user.id(), "AUTH_LOGIN_SUCCESS", "users", user.id(), context, Map.of("method", "local"));
         return issueLoginTokens(user, request.deviceLabel(), context);
+    }
+
+    @Transactional
+    public AuthResponse loginWithGoogle(GoogleIdentity identity, RequestContext context) {
+        String email = normalize(identity.email());
+        if (!identity.emailVerified()) {
+            loginHistoryRepository.record(null, email, context.ipAddress(), context.userAgent(), false, "GOOGLE_EMAIL_UNVERIFIED");
+            throw new AuthException(HttpStatus.UNAUTHORIZED, "OAUTH_LOGIN_FAILED", "OAuth login failed");
+        }
+        Instant now = clock.instant();
+        OAuthAccountRecord existingIdentity = userOAuthAccountRepository
+                .findByProviderSubjectForUpdate(UserOAuthAccountRepository.GOOGLE, identity.subject())
+                .orElse(null);
+        if (existingIdentity != null) {
+            UserAccount user = userRepository.findById(existingIdentity.userId())
+                    .orElseThrow(() -> new AuthException(HttpStatus.UNAUTHORIZED, "OAUTH_LOGIN_FAILED", "OAuth login failed"));
+            enforceActive(user, context, "OAUTH_STATUS_REJECTED");
+            userOAuthAccountRepository.updateLoginMetadata(existingIdentity.id(), email, true, now);
+            return completeOAuthLogin(user, context, now, "google_existing");
+        }
+
+        UserAccount user = userRepository.findByEmailForUpdate(email).orElse(null);
+        if (user != null) {
+            if (user.emailVerifiedAt() == null) {
+                loginHistoryRepository.record(user.id(), email, context.ipAddress(), context.userAgent(), false,
+                        "GOOGLE_EMAIL_COLLISION_UNVERIFIED");
+                audit(user.id(), "AUTH_GOOGLE_EMAIL_COLLISION_REJECTED", "users", user.id(), context, Map.of());
+                throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
+            }
+            enforceActive(user, context, "OAUTH_STATUS_REJECTED");
+            try {
+                userOAuthAccountRepository.create(user.id(), UserOAuthAccountRepository.GOOGLE,
+                        identity.subject(), email, true, now);
+            } catch (DuplicateKeyException exception) {
+                loginHistoryRepository.record(user.id(), email, context.ipAddress(), context.userAgent(), false,
+                        "GOOGLE_IDENTITY_RACE_REJECTED");
+                audit(user.id(), "AUTH_GOOGLE_IDENTITY_RACE_REJECTED", "users", user.id(), context, Map.of());
+                throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
+            }
+            return completeOAuthLogin(user, context, now, "google_auto_link_verified_email");
+        }
+
+        UserAccount created = createGoogleUser(identity, email, now, context);
+        return completeOAuthLogin(created, context, now, "google_new_user");
     }
 
     @Transactional(noRollbackFor = AuthException.class)
@@ -213,6 +263,41 @@ public class AuthService {
         JwtService.IssuedAccessToken access = jwtService.issue(user, sessionId);
         context.setRefreshToken(refresh.refreshToken());
         return new AuthResponse(access.value(), access.expiresAt(), toCurrentUser(user));
+    }
+
+    private AuthResponse completeOAuthLogin(UserAccount user, RequestContext context, Instant now, String method) {
+        loginHistoryRepository.record(user.id(), user.email(), context.ipAddress(), context.userAgent(), true, null);
+        userRepository.markLastLogin(user.id(), now);
+        audit(user.id(), "AUTH_GOOGLE_LOGIN_SUCCESS", "users", user.id(), context, Map.of("method", method));
+        return issueLoginTokens(user, "Google", context);
+    }
+
+    private UserAccount createGoogleUser(GoogleIdentity identity, String email, Instant now, RequestContext context) {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            String username = generatedUsername(identity.subject(), attempt);
+            try {
+                UUID userId = userRepository.createOAuthUser(email, username, now);
+                UUID playerId = playerFoundationRepository.createProfile(userId, username);
+                playerFoundationRepository.createStatistics(playerId);
+                playerFoundationRepository.createSettings(playerId);
+                playerFoundationRepository.createInventory(playerId);
+                userOAuthAccountRepository.create(userId, UserOAuthAccountRepository.GOOGLE, identity.subject(), email, true, now);
+                audit(userId, "AUTH_GOOGLE_REGISTER_SUCCESS", "users", userId, context, Map.of("method", "google"));
+                return userRepository.findById(userId).orElseThrow();
+            } catch (DuplicateKeyException exception) {
+                if (attempt == 4) {
+                    throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
+                }
+            }
+        }
+        throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
+    }
+
+    private String generatedUsername(String subject, int attempt) {
+        String compact = subject.replaceAll("[^A-Za-z0-9]", "").toLowerCase(Locale.ROOT);
+        String suffix = compact.length() > 12 ? compact.substring(compact.length() - 12) : compact;
+        String username = "g_" + suffix + (attempt == 0 ? "" : attempt);
+        return username.length() > 32 ? username.substring(0, 32) : username;
     }
 
     private TokenPair createRefreshToken(UUID userId, UUID familyId) {
