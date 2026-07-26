@@ -4,6 +4,7 @@
 
 .gradle/
 build/
+backend/bin/
 out/
 target/
 
@@ -15,4 +16,3 @@ target/
 
 node_modules/
 dist/
-
