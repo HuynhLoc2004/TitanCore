@@ -1,7 +1,9 @@
 package com.game.auth.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.game.auth.service.JwtService;
 import com.game.auth.model.UserStatus;
+import com.game.common.error.ProblemDetails;
 import com.game.auth.repository.UserRepository;
 import com.game.auth.repository.UserSessionRepository;
 import jakarta.servlet.FilterChain;
@@ -20,17 +22,22 @@ import java.io.IOException;
 import java.util.List;
 
 @Component
+@edu.umd.cs.findbugs.annotations.SuppressFBWarnings(
+        value = "EI_EXPOSE_REP2",
+        justification = "Spring-managed collaborators are intentionally injected and not exposed")
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final UserSessionRepository userSessionRepository;
+    private final ObjectMapper objectMapper;
 
     public JwtAuthenticationFilter(JwtService jwtService, UserRepository userRepository,
-                                   UserSessionRepository userSessionRepository) {
+                                   UserSessionRepository userSessionRepository, ObjectMapper objectMapper) {
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.userSessionRepository = userSessionRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -41,7 +48,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 JwtService.AuthPrincipal principal = jwtService.validate(header.substring(7));
                 if (!sessionCanUseAccessToken(principal)) {
-                    response.sendError(HttpStatus.UNAUTHORIZED.value(), "Unauthorized");
+                    ProblemDetails.write(objectMapper, request, response, HttpStatus.UNAUTHORIZED,
+                            "UNAUTHORIZED", "Unauthorized");
                     return;
                 }
                 AuthenticatedUser user = new AuthenticatedUser(principal.userId(), principal.sessionId(), principal.role());
@@ -53,7 +61,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (RuntimeException exception) {
                 SecurityContextHolder.clearContext();
-                response.sendError(HttpStatus.UNAUTHORIZED.value(), "Unauthorized");
+                ProblemDetails.write(objectMapper, request, response, HttpStatus.UNAUTHORIZED,
+                        "UNAUTHORIZED", "Unauthorized");
                 return;
             }
         }

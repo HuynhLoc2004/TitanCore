@@ -1,11 +1,15 @@
 package com.game.auth.repository;
 
+import com.game.auth.config.AuthProperties;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.net.InetAddress;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.UUID;
 
@@ -16,9 +20,11 @@ import java.util.UUID;
 public class LoginHistoryRepository {
 
     private final JdbcTemplate jdbcTemplate;
+    private final AuthProperties authProperties;
 
-    public LoginHistoryRepository(JdbcTemplate jdbcTemplate) {
+    public LoginHistoryRepository(JdbcTemplate jdbcTemplate, AuthProperties authProperties) {
         this.jdbcTemplate = jdbcTemplate;
+        this.authProperties = authProperties;
     }
 
     public void record(UUID userId, String attemptedLogin, String ipAddress, String userAgent,
@@ -26,7 +32,8 @@ public class LoginHistoryRepository {
         jdbcTemplate.update("""
                 insert into login_history (user_id, email_attempted, ip_address, user_agent_hash, success, failure_reason)
                 values (?, ?, ?::inet, ?, ?, ?)
-                """, userId, attemptedLogin, normalizeIp(ipAddress), hashUserAgent(userAgent), success, reason);
+                """, userId, success ? null : hmacAttemptedLogin(attemptedLogin),
+                normalizeIp(ipAddress), hashUserAgent(userAgent), success, reason);
     }
 
     private String normalizeIp(String ipAddress) {
@@ -46,6 +53,19 @@ public class LoginHistoryRepository {
             return HexFormat.of().formatHex(digest);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
+    }
+
+    private String hmacAttemptedLogin(String attemptedLogin) {
+        if (attemptedLogin == null || attemptedLogin.isBlank()) {
+            return null;
+        }
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(authProperties.rateLimit().keySecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(attemptedLogin.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception exception) {
+            throw new IllegalStateException("Unable to hash attempted login", exception);
         }
     }
 }

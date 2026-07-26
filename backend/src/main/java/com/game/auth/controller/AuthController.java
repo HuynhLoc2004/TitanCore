@@ -7,6 +7,7 @@ import com.game.auth.dto.LoginRequest;
 import com.game.auth.dto.RegisterRequest;
 import com.game.auth.dto.SessionResponse;
 import com.game.auth.security.AuthenticatedUser;
+import com.game.auth.security.ClientIpResolver;
 import com.game.auth.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,10 +34,12 @@ public class AuthController {
 
     private final AuthService authService;
     private final AuthProperties authProperties;
+    private final ClientIpResolver clientIpResolver;
 
-    public AuthController(AuthService authService, AuthProperties authProperties) {
+    public AuthController(AuthService authService, AuthProperties authProperties, ClientIpResolver clientIpResolver) {
         this.authService = authService;
         this.authProperties = authProperties;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/register")
@@ -61,6 +65,12 @@ public class AuthController {
         AuthService.RequestContext context = requestContext(servletRequest);
         AuthResponse response = authService.refresh(refreshToken, context);
         return withRefreshCookie(response, context.refreshToken());
+    }
+
+    @GetMapping("/csrf")
+    public ResponseEntity<Void> csrf(CsrfToken csrfToken) {
+        csrfToken.getToken();
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/logout")
@@ -126,14 +136,6 @@ public class AuthController {
     }
 
     private AuthService.RequestContext requestContext(HttpServletRequest request) {
-        return new AuthService.RequestContext(clientIp(request), request.getHeader(HttpHeaders.USER_AGENT));
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
+        return new AuthService.RequestContext(clientIpResolver.resolve(request), request.getHeader(HttpHeaders.USER_AGENT));
     }
 }

@@ -15,14 +15,17 @@ public record AuthProperties(
         @Valid @NotNull Jwt jwt,
         @Valid @NotNull Refresh refresh,
         @Valid @NotNull Cookie cookie,
-        @Valid @NotNull RateLimit rateLimit
+        @Valid @NotNull RateLimit rateLimit,
+        @Valid @NotNull TrustedProxy trustedProxy
 ) {
 
     public record Jwt(
             @NotBlank String issuer,
+            @NotBlank String audience,
             String privateKey,
             String publicKey,
-            @NotNull Duration accessTokenTtl
+            @NotNull Duration accessTokenTtl,
+            @NotNull Duration clockSkew
     ) {
     }
 
@@ -49,5 +52,14 @@ public record AuthProperties(
             @NotNull Duration window,
             boolean failClosed
     ) {
+    }
+
+    public record TrustedProxy(
+            boolean enabled,
+            @NotNull java.util.List<String> allowedProxies
+    ) {
+        public TrustedProxy {
+            allowedProxies = java.util.List.copyOf(allowedProxies);
+        }
     }
 }

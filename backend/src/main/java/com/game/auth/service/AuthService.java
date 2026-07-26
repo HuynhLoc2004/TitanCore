@@ -101,7 +101,11 @@ public class AuthService {
                     context.userAgent(), false, "BAD_CREDENTIALS");
             throw new AuthException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", UNIFORM_FAILURE);
         }
-        enforceActive(user, context, "LOGIN_STATUS_REJECTED");
+        if (user.status() != UserStatus.ACTIVE) {
+            loginHistoryRepository.record(user.id(), login, context.ipAddress(), context.userAgent(), false, "ACCOUNT_NOT_ACTIVE");
+            audit(user.id(), "AUTH_ACCOUNT_STATUS_REJECTED", "users", user.id(), context, Map.of("reason", "LOGIN_STATUS_REJECTED"));
+            throw new AuthException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_FAILED", UNIFORM_FAILURE);
+        }
         loginHistoryRepository.record(user.id(), login, context.ipAddress(), context.userAgent(), true, null);
         userRepository.markLastLogin(user.id(), clock.instant());
         audit(user.id(), "AUTH_LOGIN_SUCCESS", "users", user.id(), context, Map.of("method", "local"));

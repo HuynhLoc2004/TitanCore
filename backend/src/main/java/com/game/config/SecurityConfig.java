@@ -1,6 +1,8 @@
 package com.game.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.game.auth.security.JwtAuthenticationFilter;
+import com.game.common.error.ProblemDetails;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,11 +32,14 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final String allowedOrigins;
+    private final ObjectMapper objectMapper;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-                          @Value("${app.cors.allowed-origins}") String allowedOrigins) {
+                          @Value("${app.cors.allowed-origins}") String allowedOrigins,
+                          ObjectMapper objectMapper) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.allowedOrigins = allowedOrigins;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
@@ -51,11 +56,14 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) ->
-                                response.sendError(HttpStatus.UNAUTHORIZED.value(), "Unauthorized"))
+                                ProblemDetails.write(objectMapper, request, response, HttpStatus.UNAUTHORIZED,
+                                        "UNAUTHORIZED", "Unauthorized"))
                         .accessDeniedHandler((request, response, exception) ->
-                                response.sendError(HttpStatus.FORBIDDEN.value(), "Forbidden")))
+                                ProblemDetails.write(objectMapper, request, response, HttpStatus.FORBIDDEN,
+                                        "FORBIDDEN", "Forbidden")))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login", "/api/auth/refresh").permitAll()
                         .requestMatchers("/actuator/health", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()

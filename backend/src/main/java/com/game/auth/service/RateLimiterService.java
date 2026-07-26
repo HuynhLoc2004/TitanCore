@@ -2,6 +2,7 @@ package com.game.auth.service;
 
 import com.game.auth.config.AuthProperties;
 import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -10,6 +11,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Base64;
 
 @Service
@@ -19,6 +21,18 @@ import java.util.Base64;
 public class RateLimiterService {
 
     private static final String HMAC_ALGORITHM = "HmacSHA256";
+    private static final DefaultRedisScript<List> RATE_LIMIT_SCRIPT = new DefaultRedisScript<>("""
+            local current = redis.call('INCR', KEYS[1])
+            if current == 1 then
+              redis.call('PEXPIRE', KEYS[1], ARGV[1])
+            end
+            local ttl = redis.call('PTTL', KEYS[1])
+            if ttl <= 0 then
+              redis.call('PEXPIRE', KEYS[1], ARGV[1])
+              ttl = redis.call('PTTL', KEYS[1])
+            end
+            return { current, ttl }
+            """, List.class);
 
     private final StringRedisTemplate redisTemplate;
     private final AuthProperties authProperties;
@@ -44,12 +58,12 @@ public class RateLimiterService {
     private void check(String bucket, String value, int limit) {
         String key = "auth:rate:" + bucket + ":" + hmac(value == null ? "unknown" : value);
         try {
-            Long attempts = redisTemplate.opsForValue().increment(key);
-            if (attempts != null && attempts == 1L) {
-                redisTemplate.expire(key, authProperties.rateLimit().window());
-            }
+            List<?> result = redisTemplate.execute(RATE_LIMIT_SCRIPT, List.of(key),
+                    Long.toString(authProperties.rateLimit().window().toMillis()));
+            Long attempts = asLong(result, 0);
+            Long ttlMillis = asLong(result, 1);
             if (attempts != null && attempts > limit) {
-                long retryAfter = Math.max(1, ttl(key).toSeconds());
+                long retryAfter = Math.max(1, Duration.ofMillis(ttlMillis == null ? 0 : ttlMillis).toSeconds());
                 throw new RateLimitException(retryAfter);
             }
         } catch (RedisConnectionFailureException exception) {
@@ -59,11 +73,11 @@ public class RateLimiterService {
         }
     }
 
-    private Duration ttl(String key) {
-        Long ttlSeconds = redisTemplate.getExpire(key);
-        return ttlSeconds == null || ttlSeconds < 0
-                ? authProperties.rateLimit().window()
-                : Duration.ofSeconds(ttlSeconds);
+    private Long asLong(List<?> result, int index) {
+        if (result == null || result.size() <= index || !(result.get(index) instanceof Number number)) {
+            return null;
+        }
+        return number.longValue();
     }
 
     private String normalize(String value) {

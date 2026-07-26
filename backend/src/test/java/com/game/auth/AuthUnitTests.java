@@ -3,15 +3,23 @@ package com.game.auth;
 import com.game.auth.config.AuthProperties;
 import com.game.auth.model.UserAccount;
 import com.game.auth.model.UserStatus;
+import com.game.auth.security.ClientIpResolver;
 import com.game.auth.service.AuthException;
 import com.game.auth.service.JwtService;
 import com.game.auth.service.RateLimiterService;
 import com.game.auth.service.TokenHashService;
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.PlainJWT;
+import com.nimbusds.jwt.SignedJWT;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.security.KeyPair;
@@ -19,6 +27,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -86,12 +96,41 @@ class AuthUnitTests {
     }
 
     @Test
+    void jwtRejectsUnexpectedAlgorithmsAndMissingRequiredClaims() throws Exception {
+        KeyPair keys = TestKeys.generateRsa();
+        Clock clock = Clock.fixed(Instant.parse("2026-07-22T00:00:00Z"), ZoneOffset.UTC);
+        AuthProperties properties = properties(TestKeys.privatePem(keys), TestKeys.publicPem(keys), Duration.ofMinutes(10));
+        JwtService service = new JwtService(properties, clock, new StandardEnvironment());
+
+        assertThatThrownBy(() -> service.validate(hs256Token(clock.instant()))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(plainToken(clock.instant()))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "sid"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "sub"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "role"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "jti"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "iat"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "exp"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "iss"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256TokenWithoutClaim(keys, clock.instant(), "aud"))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256Token(keys, clock.instant(), "wrong", "titancore-game-client",
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(), "PLAYER", 600))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256Token(keys, clock.instant(), "test", "wrong",
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(), "PLAYER", 600))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256Token(keys, clock.instant(), "test", "titancore-game-client",
+                "not-a-uuid", UUID.randomUUID().toString(), "PLAYER", 600))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256Token(keys, clock.instant(), "test", "titancore-game-client",
+                UUID.randomUUID().toString(), "not-a-uuid", "PLAYER", 600))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256Token(keys, clock.instant(), "test", "titancore-game-client",
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(), "SUPER_ADMIN", 600))).isInstanceOf(AuthException.class);
+        assertThatThrownBy(() -> service.validate(rs256Token(keys, clock.instant(), "test", "titancore-game-client",
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(), "PLAYER", -60))).isInstanceOf(AuthException.class);
+    }
+
+    @Test
     void rateLimiterFailsOpenOrClosedWhenRedisIsUnavailableByConfiguration() {
         StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.increment(org.mockito.ArgumentMatchers.anyString()))
+        when(redisTemplate.execute(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.<String>any()))
                 .thenThrow(new RedisConnectionFailureException("down"));
 
         RateLimiterService failOpen = new RateLimiterService(redisTemplate, properties(false));
@@ -103,21 +142,105 @@ class AuthUnitTests {
                 .hasMessage("Authentication temporarily unavailable");
     }
 
+    @Test
+    void clientIpResolverIgnoresForwardedHeaderUnlessRemotePeerIsTrusted() {
+        HttpServletRequest direct = request("203.0.113.10", "198.51.100.55");
+        assertThat(new ClientIpResolver(properties(false)).resolve(direct)).isEqualTo("203.0.113.10");
+
+        AuthProperties trusted = properties(false, true, List.of("203.0.113.10"));
+        assertThat(new ClientIpResolver(trusted).resolve(direct)).isEqualTo("198.51.100.55");
+        assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "198.51.100.55, 10.0.0.1")))
+                .isEqualTo("203.0.113.10");
+        assertThat(new ClientIpResolver(trusted).resolve(request("203.0.113.10", "bad ip")))
+                .isEqualTo("203.0.113.10");
+    }
+
     private AuthProperties properties(String privateKey, String publicKey, Duration accessTtl) {
         return new AuthProperties(
-                new AuthProperties.Jwt("test", privateKey, publicKey, accessTtl),
+                new AuthProperties.Jwt("test", "titancore-game-client", privateKey, publicKey,
+                        accessTtl, Duration.ofSeconds(30)),
                 new AuthProperties.Refresh(Duration.ofDays(14), 48),
                 new AuthProperties.Cookie("refresh_token", "/api/auth", false, "Lax"),
-                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15), false)
+                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15), false),
+                new AuthProperties.TrustedProxy(false, List.of())
         );
     }
 
     private AuthProperties properties(boolean failClosed) {
+        return properties(failClosed, false, List.of());
+    }
+
+    private AuthProperties properties(boolean failClosed, boolean trustedProxyEnabled, List<String> trustedProxies) {
         return new AuthProperties(
-                new AuthProperties.Jwt("test", "", "", Duration.ofMinutes(10)),
+                new AuthProperties.Jwt("test", "titancore-game-client", "", "", Duration.ofMinutes(10), Duration.ofSeconds(30)),
                 new AuthProperties.Refresh(Duration.ofDays(14), 48),
                 new AuthProperties.Cookie("refresh_token", "/api/auth", false, "Lax"),
-                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15), failClosed)
+                new AuthProperties.RateLimit("test-secret", 20, 10, 10, 60, Duration.ofMinutes(15), failClosed),
+                new AuthProperties.TrustedProxy(trustedProxyEnabled, trustedProxies)
         );
+    }
+
+    private HttpServletRequest request(String remoteAddress, String forwardedFor) {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRemoteAddr()).thenReturn(remoteAddress);
+        when(request.getHeader("X-Forwarded-For")).thenReturn(forwardedFor);
+        return request;
+    }
+
+    private String hs256Token(Instant now) throws Exception {
+        SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), standardClaims(now).build());
+        jwt.sign(new MACSigner("01234567890123456789012345678901"));
+        return jwt.serialize();
+    }
+
+    private String plainToken(Instant now) {
+        return new PlainJWT(standardClaims(now).build()).serialize();
+    }
+
+    private String rs256TokenWithoutClaim(KeyPair keys, Instant now, String claim) throws Exception {
+        JWTClaimsSet.Builder builder = standardClaims(now);
+        switch (claim) {
+            case "sub" -> builder.subject(null);
+            case "sid" -> builder.claim("sid", null);
+            case "role" -> builder.claim("role", null);
+            case "jti" -> builder.jwtID(null);
+            case "iat" -> builder.issueTime(null);
+            case "exp" -> builder.expirationTime(null);
+            case "iss" -> builder.issuer(null);
+            case "aud" -> builder.audience((List<String>) null);
+            default -> throw new IllegalArgumentException("Unsupported claim");
+        }
+        return sign(keys, builder.build());
+    }
+
+    private String rs256Token(KeyPair keys, Instant now, String issuer, String audience, String subject,
+                              String sessionId, String role, long expiresInSeconds) throws Exception {
+        JWTClaimsSet claims = standardClaims(now)
+                .issuer(issuer)
+                .audience(audience)
+                .subject(subject)
+                .claim("sid", sessionId)
+                .claim("role", role)
+                .expirationTime(Date.from(now.plusSeconds(expiresInSeconds)))
+                .build();
+        return sign(keys, claims);
+    }
+
+    private JWTClaimsSet.Builder standardClaims(Instant now) {
+        return new JWTClaimsSet.Builder()
+                .issuer("test")
+                .audience("titancore-game-client")
+                .subject(UUID.randomUUID().toString())
+                .claim("sid", UUID.randomUUID().toString())
+                .claim("role", "PLAYER")
+                .jwtID(UUID.randomUUID().toString())
+                .issueTime(Date.from(now))
+                .expirationTime(Date.from(now.plusSeconds(600)));
+    }
+
+    private String sign(KeyPair keys, JWTClaimsSet claims) throws Exception {
+        SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).type(JOSEObjectType.JWT).build(), claims);
+        jwt.sign(new com.nimbusds.jose.crypto.RSASSASigner(keys.getPrivate()));
+        return jwt.serialize();
     }
 }

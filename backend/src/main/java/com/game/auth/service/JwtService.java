@@ -20,10 +20,12 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.text.ParseException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -49,6 +51,7 @@ public class JwtService {
         Instant expiresAt = now.plus(authProperties.jwt().accessTokenTtl());
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .issuer(authProperties.jwt().issuer())
+                .audience(authProperties.jwt().audience())
                 .subject(user.id().toString())
                 .issueTime(Date.from(now))
                 .expirationTime(Date.from(expiresAt))
@@ -68,24 +71,59 @@ public class JwtService {
     public AuthPrincipal validate(String token) {
         try {
             SignedJWT jwt = SignedJWT.parse(token);
+            if (!JWSAlgorithm.RS256.equals(jwt.getHeader().getAlgorithm())) {
+                throw unauthorized();
+            }
             if (!jwt.verify(new RSASSAVerifier(publicKey))) {
-                throw new AuthException(org.springframework.http.HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized");
+                throw unauthorized();
             }
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
             Instant now = clock.instant();
-            if (!authProperties.jwt().issuer().equals(claims.getIssuer())
-                    || claims.getExpirationTime() == null
-                    || claims.getExpirationTime().toInstant().isBefore(now)) {
-                throw new AuthException(org.springframework.http.HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized");
-            }
+            validateClaims(claims, now);
             return new AuthPrincipal(
                     UUID.fromString(claims.getSubject()),
                     UUID.fromString((String) claims.getClaim("sid")),
                     (String) claims.getClaim("role")
             );
         } catch (ParseException | JOSEException | IllegalArgumentException exception) {
-            throw new AuthException(org.springframework.http.HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized");
+            throw unauthorized();
         }
+    }
+
+    private void validateClaims(JWTClaimsSet claims, Instant now) {
+        Date expiration = claims.getExpirationTime();
+        Date issuedAt = claims.getIssueTime();
+        if (!authProperties.jwt().issuer().equals(claims.getIssuer())
+                || !List.of(authProperties.jwt().audience()).equals(claims.getAudience())
+                || !StringUtils.hasText(claims.getSubject())
+                || !StringUtils.hasText(claims.getJWTID())
+                || issuedAt == null
+                || expiration == null
+                || !StringUtils.hasText(stringClaim(claims, "sid"))
+                || !StringUtils.hasText(stringClaim(claims, "role"))) {
+            throw unauthorized();
+        }
+        Instant iat = issuedAt.toInstant();
+        Instant exp = expiration.toInstant();
+        Duration skew = authProperties.jwt().clockSkew();
+        if (!exp.isAfter(iat) || exp.plus(skew).isBefore(now) || iat.minus(skew).isAfter(now)) {
+            throw unauthorized();
+        }
+        UUID.fromString(claims.getSubject());
+        UUID.fromString(stringClaim(claims, "sid"));
+        String role = stringClaim(claims, "role");
+        if (!List.of("PLAYER", "ADMIN").contains(role)) {
+            throw unauthorized();
+        }
+    }
+
+    private String stringClaim(JWTClaimsSet claims, String name) {
+        Object value = claims.getClaim(name);
+        return value instanceof String string ? string : null;
+    }
+
+    private AuthException unauthorized() {
+        return new AuthException(org.springframework.http.HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Unauthorized");
     }
 
     private RSAPrivateKey loadPrivateKey(String pem, Environment environment) {

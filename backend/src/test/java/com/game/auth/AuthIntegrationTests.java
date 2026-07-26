@@ -28,7 +28,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -79,6 +78,7 @@ class AuthIntegrationTests {
         registry.add("app.auth.rate-limit.login-identity-limit", () -> "3");
         registry.add("app.auth.rate-limit.register-ip-limit", () -> "50");
         registry.add("app.auth.rate-limit.window", () -> "2m");
+        registry.add("app.auth.trusted-proxy.enabled", () -> "false");
         registry.add("app.cors.allowed-origins", () -> "http://localhost:5173");
     }
 
@@ -136,17 +136,21 @@ class AuthIntegrationTests {
         mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(login.accessToken())))
                 .andExpect(status().isOk());
 
+        CsrfMaterial refreshCsrf = csrf();
         MvcResult refreshResult = mockMvc.perform(post("/api/auth/refresh")
                         .cookie(cookie(login.refreshCookie()))
-                        .with(csrf()))
+                        .cookie(refreshCsrf.cookie())
+                        .header("X-XSRF-TOKEN", refreshCsrf.value()))
                 .andExpect(status().isOk())
                 .andReturn();
         AuthResult refreshed = authResult(refreshResult);
         assertThat(activeRefreshTokenCount(UUID.fromString(refreshed.userId()))).isEqualTo(2);
 
+        CsrfMaterial replayCsrf = csrf();
         mockMvc.perform(post("/api/auth/refresh")
                         .cookie(cookie(login.refreshCookie()))
-                        .with(csrf()))
+                        .cookie(replayCsrf.cookie())
+                        .header("X-XSRF-TOKEN", replayCsrf.value()))
                 .andExpect(status().isUnauthorized());
         assertThat(activeRefreshTokenCount(UUID.fromString(refreshed.userId()))).isEqualTo(1);
 
@@ -155,9 +159,11 @@ class AuthIntegrationTests {
         mockMvc.perform(get("/api/auth/sessions").header(HttpHeaders.AUTHORIZATION, bearer(secondLogin.accessToken())))
                 .andExpect(status().isOk());
 
+        CsrfMaterial logoutCsrf = csrf();
         mockMvc.perform(post("/api/auth/logout")
                         .header(HttpHeaders.AUTHORIZATION, bearer(secondLogin.accessToken()))
-                        .with(csrf()))
+                        .cookie(logoutCsrf.cookie())
+                        .header("X-XSRF-TOKEN", logoutCsrf.value()))
                 .andExpect(status().isNoContent());
     }
 
@@ -176,7 +182,7 @@ class AuthIntegrationTests {
                                       "deviceLabel": "Browser"
                                     }
                                     """))
-                    .andExpect(status().isForbidden());
+                    .andExpect(status().isUnauthorized());
         }
     }
 
@@ -206,9 +212,20 @@ class AuthIntegrationTests {
     @Test
     void csrfAndCorsAreEnforcedForCookieMutationEndpoints() throws Exception {
         AuthResult auth = register("csrf@example.com", "csrfuser");
+        CsrfMaterial csrf = csrf();
 
         mockMvc.perform(post("/api/auth/refresh").cookie(cookie(auth.refreshCookie())))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/auth/refresh")
+                        .cookie(cookie(auth.refreshCookie()))
+                        .cookie(csrf.cookie())
+                        .header("X-XSRF-TOKEN", "wrong"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/api/auth/refresh")
+                        .cookie(cookie(auth.refreshCookie()))
+                        .cookie(csrf.cookie())
+                        .header("X-XSRF-TOKEN", csrf.value()))
+                .andExpect(status().isOk());
 
         mockMvc.perform(options("/api/auth/me")
                         .header(HttpHeaders.ORIGIN, "http://localhost:5173")
@@ -231,9 +248,11 @@ class AuthIntegrationTests {
             if (!latch.await(5, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("Concurrent refresh test did not start");
             }
+            CsrfMaterial csrf = csrf();
             return mockMvc.perform(post("/api/auth/refresh")
                             .cookie(cookie(login.refreshCookie()))
-                            .with(csrf()))
+                            .cookie(csrf.cookie())
+                            .header("X-XSRF-TOKEN", csrf.value()))
                     .andReturn()
                     .getResponse()
                     .getStatus();
@@ -259,14 +278,38 @@ class AuthIntegrationTests {
         AuthResult other = register("other@example.com", "otheruser");
         UUID otherSessionId = firstSessionId(other.accessToken());
 
+        CsrfMaterial deleteCsrf = csrf();
         mockMvc.perform(delete("/api/auth/sessions/" + otherSessionId)
                         .header(HttpHeaders.AUTHORIZATION, bearer(owner.accessToken()))
-                        .with(csrf()))
+                        .cookie(deleteCsrf.cookie())
+                        .header("X-XSRF-TOKEN", deleteCsrf.value()))
                 .andExpect(status().isNotFound());
 
         jdbcTemplate.update("update users set status = ? where id = ?", "BANNED", UUID.fromString(owner.userId()));
         mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(owner.accessToken())))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void untrustedForwardedForCannotSpoofRateLimitOrAuditIp() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            mockMvc.perform(post("/api/auth/login")
+                            .with(request -> {
+                                request.setRemoteAddr("203.0.113.77");
+                                return request;
+                            })
+                            .header("X-Forwarded-For", "198.51.100." + i)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "login": "spoof@example.com",
+                                      "password": "very-secure-password",
+                                      "deviceLabel": "Browser"
+                                    }
+                                    """))
+                    .andExpect(i < 3 ? status().isUnauthorized() : status().isTooManyRequests());
+        }
+        assertThat(redisKeys()).noneMatch(key -> key.contains("198.51.100."));
     }
 
     private AuthResult register(String email, String username) throws Exception {
@@ -314,6 +357,16 @@ class AuthIntegrationTests {
         return new jakarta.servlet.http.Cookie(parts[0], parts[1]);
     }
 
+    private CsrfMaterial csrf() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/auth/csrf"))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        String setCookie = result.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+        assertThat(setCookie).isNotNull();
+        jakarta.servlet.http.Cookie cookie = cookie(setCookie);
+        return new CsrfMaterial(cookie, cookie.getValue());
+    }
+
     private String bearer(String token) {
         return "Bearer " + token;
     }
@@ -349,5 +402,8 @@ class AuthIntegrationTests {
     }
 
     private record AuthResult(String accessToken, String userId, String refreshCookie) {
+    }
+
+    private record CsrfMaterial(jakarta.servlet.http.Cookie cookie, String value) {
     }
 }
