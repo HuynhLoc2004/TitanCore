@@ -1,5 +1,14 @@
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { fetchMe, login, logout as apiLogout, refreshAccessToken, register, setAccessToken, type User } from './api';
+import {
+  fetchMe,
+  invalidateAuthGeneration,
+  login,
+  logout as apiLogout,
+  refreshAccessToken,
+  register,
+  setAccessToken,
+  type User,
+} from './api';
 
 type AuthStatus = 'bootstrapping' | 'anonymous' | 'authenticated';
 
@@ -59,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logoutAction = useCallback(async () => {
     setError(null);
+    invalidateAuthGeneration();
     try {
       await apiLogout();
     } finally {

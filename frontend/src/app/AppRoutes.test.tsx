@@ -105,4 +105,78 @@ describe('auth routes', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: /enter the camp/i })).toBeInTheDocument());
     expect(window.location.pathname).toBe('/login');
   });
+
+  it('does not render the login form for an authenticated user on a public login route', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        document.cookie = `${csrfCookieName}=${csrfValue}; path=/`;
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/api/auth/refresh')) {
+        return jsonResponse({
+          accessToken: restoredAccess,
+          accessTokenExpiresAt: '2026-07-26T12:00:00Z',
+          user,
+        });
+      }
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(user);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/login');
+
+    await waitFor(() => expect(window.location.pathname).toBe('/app'));
+    expect(screen.queryByRole('heading', { name: /enter the camp/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+  });
+
+  it('does not render the registration form for an authenticated user on a public register route', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        document.cookie = `${csrfCookieName}=${csrfValue}; path=/`;
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/api/auth/refresh')) {
+        return jsonResponse({
+          accessToken: restoredAccess,
+          accessTokenExpiresAt: '2026-07-26T12:00:00Z',
+          user,
+        });
+      }
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(user);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/register');
+
+    await waitFor(() => expect(window.location.pathname).toBe('/app'));
+    expect(screen.queryByRole('heading', { name: /forge your banner/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+  });
+
+  it('renders only the loading shell while bootstrap is pending', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        document.cookie = `${csrfCookieName}=${csrfValue}; path=/`;
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/api/auth/refresh')) {
+        return new Promise<Response>(() => undefined);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/app');
+
+    expect(screen.getByRole('status')).toHaveTextContent(/checking your raid pass/i);
+    expect(screen.queryByRole('heading', { name: /welcome back/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /enter the camp/i })).not.toBeInTheDocument();
+  });
 });

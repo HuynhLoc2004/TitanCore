@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { ApiError } from '../api';
 
 type FieldState = {
@@ -24,22 +24,28 @@ export function AuthForm({
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const submittingRef = useRef(false);
   const passwordId = `${mode}-password`;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submittingRef.current) {
+      return;
+    }
     const nextErrors = validate(mode, values);
     setErrors(nextErrors);
     setGlobalError(null);
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
+    submittingRef.current = true;
     setLoading(true);
     try {
       await onSubmit(values);
     } catch (error) {
       setGlobalError(error instanceof ApiError ? error.message : 'The gate jammed. Try again.');
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   }
@@ -110,7 +116,11 @@ export function AuthForm({
         {loading ? 'Summoning...' : mode === 'login' ? 'Start raid' : 'Create champion'}
       </button>
 
-      <button className="tc-link-button" type="button" onClick={switchAction}>
+      <button className="tc-link-button" type="button" onClick={() => {
+        if (!submittingRef.current) {
+          switchAction();
+        }
+      }} disabled={loading}>
         {switchLabel}
       </button>
     </form>

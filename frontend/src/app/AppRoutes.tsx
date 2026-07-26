@@ -44,6 +44,10 @@ export function AppRoutes() {
     return <BootstrapScreen />;
   }
 
+  if (status === 'authenticated' && route !== '/app') {
+    return <RedirectingScreen />;
+  }
+
   if (route === '/register') {
     return <RegisterPage onLogin={() => navigate('/login')} />;
   }
@@ -86,6 +90,20 @@ function BootstrapScreen() {
           <div className="tc-loader-token" aria-hidden="true" />
           <p className="tc-eyebrow">TitanCore</p>
           <h1>Checking your raid pass</h1>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function RedirectingScreen() {
+  return (
+    <main className="min-h-screen bg-[var(--tc-bg)] text-white">
+      <section className="tc-shell tc-center">
+        <div className="tc-loader-card" role="status" aria-live="polite">
+          <div className="tc-loader-token" aria-hidden="true" />
+          <p className="tc-eyebrow">TitanCore</p>
+          <h1>Opening your raid lobby</h1>
         </div>
       </section>
     </main>

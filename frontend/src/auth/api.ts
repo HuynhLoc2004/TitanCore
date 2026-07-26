@@ -33,6 +33,8 @@ export class ApiError extends Error {
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
 let accessToken: string | null = null;
 let refreshPromise: Promise<AuthResponse> | null = null;
+let refreshPromiseGeneration = -1;
+let authGeneration = 0;
 
 export function getAccessToken() {
   return accessToken;
@@ -42,11 +44,20 @@ export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
+export function invalidateAuthGeneration() {
+  authGeneration += 1;
+  refreshPromise = null;
+  refreshPromiseGeneration = -1;
+}
+
 export async function fetchCsrfToken() {
-  await fetch(`${apiBaseUrl}/api/auth/csrf`, {
+  const response = await safeFetch(`${apiBaseUrl}/api/auth/csrf`, {
     credentials: 'include',
     headers: { Accept: 'application/problem+json, application/json' },
-  });
+  }, 'Security handshake unavailable. Try again.');
+  if (!response.ok) {
+    throw new ApiError(response.status, 'CSRF_UNAVAILABLE', 'Security handshake unavailable. Try again.');
+  }
   const csrfCookie = readCookie('XSRF-TOKEN');
   if (!csrfCookie) {
     throw new ApiError(503, 'CSRF_UNAVAILABLE', 'Security handshake unavailable. Try again.');
@@ -76,15 +87,23 @@ export async function register(email: string, username: string, password: string
 }
 
 export async function refreshAccessToken() {
-  if (!refreshPromise) {
+  const generation = authGeneration;
+  if (!refreshPromise || refreshPromiseGeneration !== generation) {
+    refreshPromiseGeneration = generation;
     refreshPromise = authMutation<AuthResponse>('/api/auth/refresh', undefined)
       .then((response) => {
+        if (generation !== authGeneration) {
+          throw new ApiError(401, 'STALE_AUTH_GENERATION', 'Unauthorized');
+        }
         setAccessToken(response.accessToken);
         return response;
       })
       .finally(() => {
-        refreshPromise = null;
-      });
+        if (generation === authGeneration) {
+          refreshPromise = null;
+          refreshPromiseGeneration = -1;
+        }
+      }) as Promise<AuthResponse>;
   }
   return refreshPromise;
 }
@@ -94,8 +113,11 @@ export async function fetchMe() {
 }
 
 export async function logout() {
-  await authMutation<void>('/api/auth/logout', undefined);
-  setAccessToken(null);
+  try {
+    await authMutation<void>('/api/auth/logout', undefined);
+  } finally {
+    setAccessToken(null);
+  }
 }
 
 async function authMutation<T>(path: string, body: unknown) {
@@ -117,11 +139,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, allowRef
     headers.set('Authorization', `Bearer ${accessToken}`);
   }
 
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const response = await safeFetch(`${apiBaseUrl}${path}`, {
     ...init,
     headers,
     credentials: 'include',
-  });
+  }, 'Network trouble at the raid gate. Try again.');
 
   if (response.status === 401 && allowRefresh) {
     try {
@@ -140,6 +162,14 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, allowRef
     return undefined as T;
   }
   return response.json() as Promise<T>;
+}
+
+async function safeFetch(input: RequestInfo | URL, init: RequestInit, message: string) {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new ApiError(503, 'NETWORK_UNAVAILABLE', message);
+  }
 }
 
 async function toApiError(response: Response) {
