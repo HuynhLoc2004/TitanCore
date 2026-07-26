@@ -124,4 +124,3 @@ Renderer preference alone is not sufficient to reverse this decision.
 - [Phaser Scene concepts](https://docs.phaser.io/phaser/concepts/scenes)
 - [Phaser Loader concepts](https://docs.phaser.io/phaser/concepts/loader)
 - [PixiJS architecture](https://pixijs.com/8.x/guides/concepts/architecture)
-

@@ -233,4 +233,3 @@ For every target:
 - [Phaser Renderer ADR](adr/ADR-PHASER-RENDERER.md)
 - [Performance Rules](PERFORMANCE_RULES.md)
 - [Security Rules](SECURITY_RULES.md)
-
