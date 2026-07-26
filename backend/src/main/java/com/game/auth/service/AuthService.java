@@ -25,6 +25,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -57,6 +61,7 @@ public class AuthService {
     private final RateLimiterService rateLimiterService;
     private final AuthProperties authProperties;
     private final Clock clock;
+    private final TransactionTemplate requiresNewTransaction;
 
     public AuthService(UserRepository userRepository, PlayerFoundationRepository playerFoundationRepository,
                        RefreshTokenRepository refreshTokenRepository, UserSessionRepository userSessionRepository,
@@ -64,7 +69,8 @@ public class AuthService {
                        UserOAuthAccountRepository userOAuthAccountRepository,
                        PasswordEncoder passwordEncoder, JwtService jwtService,
                        RefreshTokenGenerator refreshTokenGenerator, TokenHashService tokenHashService,
-                       RateLimiterService rateLimiterService, AuthProperties authProperties, Clock clock) {
+                       RateLimiterService rateLimiterService, AuthProperties authProperties, Clock clock,
+                       PlatformTransactionManager transactionManager) {
         this.userRepository = userRepository;
         this.playerFoundationRepository = playerFoundationRepository;
         this.refreshTokenRepository = refreshTokenRepository;
@@ -79,6 +85,8 @@ public class AuthService {
         this.rateLimiterService = rateLimiterService;
         this.authProperties = authProperties;
         this.clock = clock;
+        this.requiresNewTransaction = new TransactionTemplate(transactionManager);
+        this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     @Transactional
@@ -122,30 +130,39 @@ public class AuthService {
         return issueLoginTokens(user, request.deviceLabel(), context);
     }
 
-    @Transactional
     public AuthResponse loginWithGoogle(GoogleIdentity identity, RequestContext context) {
         String email = normalize(identity.email());
         if (!identity.emailVerified()) {
-            loginHistoryRepository.record(null, email, context.ipAddress(), context.userAgent(), false, "GOOGLE_EMAIL_UNVERIFIED");
+            recordOAuthFailure(null, email, context, "GOOGLE_EMAIL_UNVERIFIED");
             throw new AuthException(HttpStatus.UNAUTHORIZED, "OAUTH_LOGIN_FAILED", "OAuth login failed");
         }
         Instant now = clock.instant();
-        OAuthAccountRecord existingIdentity = userOAuthAccountRepository
-                .findByProviderSubjectForUpdate(UserOAuthAccountRepository.GOOGLE, identity.subject())
-                .orElse(null);
-        if (existingIdentity != null) {
-            UserAccount user = userRepository.findById(existingIdentity.userId())
-                    .orElseThrow(() -> new AuthException(HttpStatus.UNAUTHORIZED, "OAUTH_LOGIN_FAILED", "OAuth login failed"));
-            enforceActive(user, context, "OAUTH_STATUS_REJECTED");
-            userOAuthAccountRepository.updateLoginMetadata(existingIdentity.id(), email, true, now);
-            return completeOAuthLogin(user, context, now, "google_existing");
+        for (int attempt = 0; attempt < 5; attempt++) {
+            int usernameAttempt = attempt;
+            try {
+                return runInNewTransaction(() -> loginWithGoogleAttempt(identity, email, context, now, usernameAttempt));
+            } catch (DuplicateKeyException exception) {
+                AuthResponse existing = runInNewTransaction(() ->
+                        loginExistingGoogleIdentity(identity, email, context, clock.instant()));
+                if (existing != null) {
+                    return existing;
+                }
+            }
         }
+        recordOAuthFailure(null, email, context, "GOOGLE_IDENTITY_RACE_REJECTED");
+        throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
+    }
 
+    private AuthResponse loginWithGoogleAttempt(GoogleIdentity identity, String email,
+                                                RequestContext context, Instant now, int usernameAttempt) {
+        AuthResponse existingLogin = loginExistingGoogleIdentity(identity, email, context, now);
+        if (existingLogin != null) {
+            return existingLogin;
+        }
         UserAccount user = userRepository.findByEmailForUpdate(email).orElse(null);
         if (user != null) {
             if (user.emailVerifiedAt() == null) {
-                loginHistoryRepository.record(user.id(), email, context.ipAddress(), context.userAgent(), false,
-                        "GOOGLE_EMAIL_COLLISION_UNVERIFIED");
+                recordOAuthFailure(user.id(), email, context, "GOOGLE_EMAIL_COLLISION_UNVERIFIED");
                 audit(user.id(), "AUTH_GOOGLE_EMAIL_COLLISION_REJECTED", "users", user.id(), context, Map.of());
                 throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
             }
@@ -154,16 +171,28 @@ public class AuthService {
                 userOAuthAccountRepository.create(user.id(), UserOAuthAccountRepository.GOOGLE,
                         identity.subject(), email, true, now);
             } catch (DuplicateKeyException exception) {
-                loginHistoryRepository.record(user.id(), email, context.ipAddress(), context.userAgent(), false,
-                        "GOOGLE_IDENTITY_RACE_REJECTED");
-                audit(user.id(), "AUTH_GOOGLE_IDENTITY_RACE_REJECTED", "users", user.id(), context, Map.of());
-                throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
+                throw exception;
             }
             return completeOAuthLogin(user, context, now, "google_auto_link_verified_email");
         }
 
-        UserAccount created = createGoogleUser(identity, email, now, context);
+        UserAccount created = createGoogleUser(identity, email, now, context, usernameAttempt);
         return completeOAuthLogin(created, context, now, "google_new_user");
+    }
+
+    private AuthResponse loginExistingGoogleIdentity(GoogleIdentity identity, String email,
+                                                     RequestContext context, Instant now) {
+        OAuthAccountRecord existingIdentity = userOAuthAccountRepository
+                .findByProviderSubjectForUpdate(UserOAuthAccountRepository.GOOGLE, identity.subject())
+                .orElse(null);
+        if (existingIdentity == null) {
+            return null;
+        }
+        UserAccount user = userRepository.findById(existingIdentity.userId())
+                .orElseThrow(() -> new AuthException(HttpStatus.UNAUTHORIZED, "OAUTH_LOGIN_FAILED", "OAuth login failed"));
+        enforceActive(user, context, "OAUTH_STATUS_REJECTED");
+        userOAuthAccountRepository.updateLoginMetadata(existingIdentity.id(), email, true, now);
+        return completeOAuthLogin(user, context, now, "google_existing");
     }
 
     @Transactional(noRollbackFor = AuthException.class)
@@ -272,25 +301,48 @@ public class AuthService {
         return issueLoginTokens(user, "Google", context);
     }
 
-    private UserAccount createGoogleUser(GoogleIdentity identity, String email, Instant now, RequestContext context) {
-        for (int attempt = 0; attempt < 5; attempt++) {
-            String username = generatedUsername(identity.subject(), attempt);
+    private UserAccount createGoogleUser(GoogleIdentity identity, String email, Instant now,
+                                         RequestContext context, int attempt) {
+        String username = generatedUsername(identity.subject(), attempt);
+        UUID userId = userRepository.createOAuthUser(email, username, now);
+        UUID playerId = playerFoundationRepository.createProfile(userId, username);
+        playerFoundationRepository.createStatistics(playerId);
+        playerFoundationRepository.createSettings(playerId);
+        playerFoundationRepository.createInventory(playerId);
+        userOAuthAccountRepository.create(userId, UserOAuthAccountRepository.GOOGLE, identity.subject(), email, true, now);
+        audit(userId, "AUTH_GOOGLE_REGISTER_SUCCESS", "users", userId, context, Map.of("method", "google"));
+        return userRepository.findById(userId).orElseThrow();
+    }
+
+    private AuthResponse runInNewTransaction(OAuthLoginOperation operation) {
+        AuthException[] expectedFailure = new AuthException[1];
+        AuthResponse response = requiresNewTransaction.execute(status -> {
             try {
-                UUID userId = userRepository.createOAuthUser(email, username, now);
-                UUID playerId = playerFoundationRepository.createProfile(userId, username);
-                playerFoundationRepository.createStatistics(playerId);
-                playerFoundationRepository.createSettings(playerId);
-                playerFoundationRepository.createInventory(playerId);
-                userOAuthAccountRepository.create(userId, UserOAuthAccountRepository.GOOGLE, identity.subject(), email, true, now);
-                audit(userId, "AUTH_GOOGLE_REGISTER_SUCCESS", "users", userId, context, Map.of("method", "google"));
-                return userRepository.findById(userId).orElseThrow();
-            } catch (DuplicateKeyException exception) {
-                if (attempt == 4) {
-                    throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
-                }
+                return operation.run();
+            } catch (AuthException exception) {
+                expectedFailure[0] = exception;
+                return null;
             }
+        });
+        if (expectedFailure[0] != null) {
+            throw expectedFailure[0];
         }
-        throw new AuthException(HttpStatus.CONFLICT, "OAUTH_ACCOUNT_COLLISION", "OAuth login could not be completed");
+        return response;
+    }
+
+    private void recordOAuthFailure(UUID userId, String email, RequestContext context, String reason) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            loginHistoryRepository.record(userId, email, context.ipAddress(), context.userAgent(), false, reason);
+            return;
+        }
+        runInNewTransaction(() -> {
+            loginHistoryRepository.record(userId, email, context.ipAddress(), context.userAgent(), false, reason);
+            return null;
+        });
+    }
+
+    private interface OAuthLoginOperation {
+        AuthResponse run();
     }
 
     private String generatedUsername(String subject, int attempt) {

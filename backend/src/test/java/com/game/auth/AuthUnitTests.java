@@ -1,6 +1,7 @@
 package com.game.auth;
 
 import com.game.auth.config.AuthProperties;
+import com.game.auth.config.AuthConfiguration;
 import com.game.auth.model.UserAccount;
 import com.game.auth.model.UserStatus;
 import com.game.auth.security.ClientIpResolver;
@@ -29,9 +30,14 @@ import org.springframework.dao.QueryTimeoutException;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.RedisSystemException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.KeyPair;
 import java.time.Clock;
 import java.time.Duration;
@@ -226,6 +232,52 @@ class AuthUnitTests {
                 .resolve(request("203.0.113.10", "198.51.100.55"))).isEqualTo("198.51.100.55");
     }
 
+    @Test
+    void oauthConfigurationReferencesOnlyApprovedEnvironmentVariables() throws Exception {
+        String applicationYaml = Files.readString(Path.of("src/main/resources/application.yml"));
+
+        assertThat(applicationYaml).contains("${GOOGLE_CLIENT_ID:")
+                .contains("${GOOGLE_CLIENT_SECRET:")
+                .contains("${GOOGLE_REDIRECT_URI:")
+                .contains("${OAUTH_SUCCESS_REDIRECT_URI:")
+                .contains("${OAUTH_FAILURE_REDIRECT_URI:");
+        assertThat(applicationYaml).doesNotContain("GOOGLE_AUTHORIZATION_URI")
+                .doesNotContain("GOOGLE_TOKEN_URI")
+                .doesNotContain("GOOGLE_JWKS_URI")
+                .doesNotContain("GOOGLE_ISSUER")
+                .doesNotContain("OAUTH_STATE_TTL")
+                .doesNotContain("OAUTH_PROVIDER_TIMEOUT");
+    }
+
+    @Test
+    void oauthRedirectConfigurationValidationCoversLocalAndProductionRules() {
+        assertOAuthConfigAccepted(propertiesWithOAuthRedirects(
+                "http://localhost:5173/app", "http://localhost:5173/login"), false,
+                "http://localhost:5173");
+        assertOAuthConfigAccepted(propertiesWithOAuthRedirects(
+                "https://game.example.com/app", "https://game.example.com/login"), true,
+                "https://game.example.com");
+
+        assertOAuthConfigRejected(propertiesWithOAuthRedirects(
+                "http://game.example.com/app", "https://game.example.com/login"), true,
+                "https://game.example.com");
+        assertOAuthConfigRejected(propertiesWithOAuthRedirects(
+                "https://evil.example.com/app", "https://game.example.com/login"), true,
+                "https://game.example.com");
+        assertOAuthConfigRejected(propertiesWithOAuthRedirects(
+                "not a uri", "https://game.example.com/login"), true,
+                "https://game.example.com");
+        assertOAuthConfigRejected(propertiesWithOAuthRedirects(
+                "https://user@game.example.com/app", "https://game.example.com/login"), true,
+                "https://game.example.com");
+        assertOAuthConfigRejected(propertiesWithOAuthRedirects(
+                "https://game.example.com/app#frag", "https://game.example.com/login"), true,
+                "https://game.example.com");
+        assertOAuthConfigRejected(propertiesWithOAuthRedirects(
+                "//game.example.com/app", "https://game.example.com/login"), true,
+                "https://game.example.com");
+    }
+
     private AuthProperties properties(String privateKey, String publicKey, Duration accessTtl) {
         return new AuthProperties(
                 new AuthProperties.Jwt("test", "titancore-game-client", privateKey, publicKey,
@@ -257,20 +309,59 @@ class AuthUnitTests {
 
     private AuthProperties.OAuth oauthProperties() {
         return new AuthProperties.OAuth(
-                Duration.ofMinutes(5),
-                Duration.ofSeconds(5),
                 "http://localhost:5173/app",
                 "http://localhost:5173/login",
                 new AuthProperties.Google(
                         "google-client-id",
                         "google-client-secret",
-                        "http://localhost:8080/api/auth/oauth/google/callback",
-                        "https://accounts.google.com/o/oauth2/v2/auth",
-                        "https://oauth2.googleapis.com/token",
-                        "https://www.googleapis.com/oauth2/v3/certs",
-                        "https://accounts.google.com"
+                        "http://localhost:8080/api/auth/oauth/google/callback"
                 )
         );
+    }
+
+    private AuthProperties propertiesWithOAuthRedirects(String successRedirectUri, String failureRedirectUri) {
+        return new AuthProperties(
+                new AuthProperties.Jwt("test", "titancore-game-client", "private", "public",
+                        Duration.ofMinutes(10), Duration.ofSeconds(30)),
+                new AuthProperties.Refresh(Duration.ofDays(14), 48),
+                new AuthProperties.Cookie("refresh_token", "/api/auth", false, "Lax"),
+                new AuthProperties.RateLimit("production-secret", 20, 10, 10, 60, Duration.ofMinutes(15),
+                        false, "production-history-secret"),
+                new AuthProperties.TrustedProxy(false, List.of()),
+                new AuthProperties.OAuth(
+                        successRedirectUri,
+                        failureRedirectUri,
+                        new AuthProperties.Google(
+                                "google-client-id",
+                                "google-client-secret",
+                                "http://localhost:8080/api/auth/oauth/google/callback"
+                        )
+                )
+        );
+    }
+
+    private void assertOAuthConfigAccepted(AuthProperties authProperties, boolean production, String allowedOrigins) {
+        try {
+            new AuthConfiguration().authConfigurationValidator(authProperties, environment(production), allowedOrigins)
+                    .afterPropertiesSet();
+        } catch (Exception exception) {
+            throw new AssertionError("Expected OAuth config to be accepted", exception);
+        }
+    }
+
+    private void assertOAuthConfigRejected(AuthProperties authProperties, boolean production, String allowedOrigins) {
+        assertThatThrownBy(() -> new AuthConfiguration()
+                .authConfigurationValidator(authProperties, environment(production), allowedOrigins)
+                .afterPropertiesSet())
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    private MockEnvironment environment(boolean production) {
+        MockEnvironment environment = new MockEnvironment();
+        if (production) {
+            environment.setActiveProfiles("prod");
+        }
+        return environment;
     }
 
     private StringRedisTemplate redisFailure(RuntimeException exception) {
@@ -283,6 +374,9 @@ class AuthUnitTests {
 
     private AuthService authService(UserRepository userRepository, LoginHistoryRepository loginHistoryRepository,
                                     PasswordEncoder passwordEncoder) {
+        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
+        when(transactionManager.getTransaction(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new SimpleTransactionStatus());
         return new AuthService(
                 userRepository,
                 mock(PlayerFoundationRepository.class),
@@ -297,7 +391,8 @@ class AuthUnitTests {
                 mock(TokenHashService.class),
                 mock(RateLimiterService.class),
                 properties(false),
-                Clock.systemUTC()
+                Clock.systemUTC(),
+                transactionManager
         );
     }
 

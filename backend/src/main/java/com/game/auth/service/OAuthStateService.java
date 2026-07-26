@@ -2,7 +2,7 @@ package com.game.auth.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.game.auth.config.AuthProperties;
+import com.game.auth.config.GoogleOAuthProviderMetadata;
 import com.game.auth.model.OAuthTransaction;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.RedisSystemException;
@@ -10,7 +10,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 
 @Service
 @edu.umd.cs.findbugs.annotations.SuppressFBWarnings(
@@ -25,10 +29,11 @@ public class OAuthStateService {
     private final ObjectMapper objectMapper;
     private final Duration ttl;
 
-    public OAuthStateService(StringRedisTemplate redisTemplate, ObjectMapper objectMapper, AuthProperties authProperties) {
+    public OAuthStateService(StringRedisTemplate redisTemplate, ObjectMapper objectMapper,
+                             GoogleOAuthProviderMetadata providerMetadata) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
-        this.ttl = authProperties.oauth().stateTtl();
+        this.ttl = providerMetadata.stateTtl();
     }
 
     public void store(OAuthTransaction transaction) {
@@ -74,6 +79,15 @@ public class OAuthStateService {
     }
 
     private String key(String state) {
-        return KEY_PREFIX + state;
+        return KEY_PREFIX + sha256(state);
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 unavailable", exception);
+        }
     }
 }

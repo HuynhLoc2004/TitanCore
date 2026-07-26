@@ -88,18 +88,12 @@ app:
       enabled: ${TRUSTED_PROXY_ENABLED:false}
       allowed-proxies: ${TRUSTED_PROXY_ALLOWED_PROXIES:}
     oauth:
-      state-ttl: ${OAUTH_STATE_TTL:5m}
-      provider-timeout: ${OAUTH_PROVIDER_TIMEOUT:5s}
       success-redirect-uri: ${OAUTH_SUCCESS_REDIRECT_URI:http://localhost:5173/app}
       failure-redirect-uri: ${OAUTH_FAILURE_REDIRECT_URI:http://localhost:5173/login}
       google:
         client-id: ${GOOGLE_CLIENT_ID:}
         client-secret: ${GOOGLE_CLIENT_SECRET:}
         redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/auth/oauth/google/callback}
-        authorization-uri: ${GOOGLE_AUTHORIZATION_URI:https://accounts.google.com/o/oauth2/v2/auth}
-        token-uri: ${GOOGLE_TOKEN_URI:https://oauth2.googleapis.com/token}
-        jwks-uri: ${GOOGLE_JWKS_URI:https://www.googleapis.com/oauth2/v3/certs}
-        issuer: ${GOOGLE_ISSUER:https://accounts.google.com}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 

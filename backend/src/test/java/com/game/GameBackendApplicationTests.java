@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.security.KeyPair;
 
@@ -25,6 +26,9 @@ class GameBackendApplicationTests {
 
     @MockBean
     private StringRedisTemplate stringRedisTemplate;
+
+    @MockBean
+    private PlatformTransactionManager transactionManager;
 
     @DynamicPropertySource
     static void authProperties(DynamicPropertyRegistry registry) {

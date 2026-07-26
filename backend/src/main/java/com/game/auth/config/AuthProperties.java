@@ -66,8 +66,6 @@ public record AuthProperties(
     }
 
     public record OAuth(
-            @NotNull Duration stateTtl,
-            @NotNull Duration providerTimeout,
             @NotBlank String successRedirectUri,
             @NotBlank String failureRedirectUri,
             @Valid @NotNull Google google
@@ -77,11 +75,7 @@ public record AuthProperties(
     public record Google(
             String clientId,
             String clientSecret,
-            @NotBlank String redirectUri,
-            @NotBlank String authorizationUri,
-            @NotBlank String tokenUri,
-            @NotBlank String jwksUri,
-            @NotBlank String issuer
+            @NotBlank String redirectUri
     ) {
     }
 }

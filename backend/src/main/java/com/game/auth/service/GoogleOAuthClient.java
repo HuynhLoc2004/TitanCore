@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.game.auth.config.AuthProperties;
+import com.game.auth.config.GoogleOAuthProviderMetadata;
 import com.game.auth.model.GoogleIdentity;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -39,14 +40,17 @@ import java.util.stream.Collectors;
 public class GoogleOAuthClient {
 
     private final AuthProperties authProperties;
+    private final GoogleOAuthProviderMetadata providerMetadata;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    public GoogleOAuthClient(AuthProperties authProperties, ObjectMapper objectMapper, Clock clock) {
+    public GoogleOAuthClient(AuthProperties authProperties, GoogleOAuthProviderMetadata providerMetadata,
+                             ObjectMapper objectMapper, Clock clock) {
         this.authProperties = authProperties;
+        this.providerMetadata = providerMetadata;
         this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(authProperties.oauth().providerTimeout())
+                .connectTimeout(providerMetadata.providerTimeout())
                 .build();
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -70,8 +74,8 @@ public class GoogleOAuthClient {
                     "redirect_uri", authProperties.oauth().google().redirectUri(),
                     "code_verifier", codeVerifier
             ));
-            HttpRequest request = HttpRequest.newBuilder(URI.create(authProperties.oauth().google().tokenUri()))
-                    .timeout(authProperties.oauth().providerTimeout())
+            HttpRequest request = HttpRequest.newBuilder(URI.create(providerMetadata.tokenUri()))
+                    .timeout(providerMetadata.providerTimeout())
                     .header("Content-Type", "application/x-www-form-urlencoded")
                     .header("Accept", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(body))
@@ -85,7 +89,7 @@ public class GoogleOAuthClient {
                 throw oauthFailed();
             }
             return response;
-        } catch (java.io.IOException | InterruptedException exception) {
+        } catch (IllegalArgumentException | java.io.IOException | InterruptedException exception) {
             if (exception instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -102,13 +106,13 @@ public class GoogleOAuthClient {
             if (!jwt.verify(new RSASSAVerifier(key.toRSAPublicKey()))) {
                 throw oauthFailed();
             }
-            validateClaims(claims, expectedNonce);
+            ValidatedClaims validatedClaims = validateClaims(claims, expectedNonce);
             return new GoogleIdentity(
-                    claims.getSubject(),
-                    normalize(claims.getStringClaim("email")),
-                    Boolean.TRUE.equals(claims.getBooleanClaim("email_verified"))
+                    validatedClaims.subject(),
+                    validatedClaims.email(),
+                    true
             );
-        } catch (ParseException | JOSEException exception) {
+        } catch (IllegalArgumentException | ParseException | JOSEException exception) {
             throw oauthFailed();
         }
     }
@@ -119,28 +123,38 @@ public class GoogleOAuthClient {
         }
     }
 
-    private void validateClaims(JWTClaimsSet claims, String expectedNonce) {
+    private ValidatedClaims validateClaims(JWTClaimsSet claims, String expectedNonce) {
         try {
             Instant now = clock.instant();
             Date expiration = claims.getExpirationTime();
-            if (!authProperties.oauth().google().issuer().equals(claims.getIssuer())
-                    || !claims.getAudience().equals(List.of(authProperties.oauth().google().clientId()))
+            Date issuedAt = claims.getIssueTime();
+            List<String> audience = claims.getAudience();
+            String subject = claims.getSubject();
+            String email = normalize(claims.getStringClaim("email"));
+            Boolean emailVerified = claims.getBooleanClaim("email_verified");
+            if (!providerMetadata.issuer().equals(claims.getIssuer())
+                    || audience == null
+                    || !audience.equals(List.of(authProperties.oauth().google().clientId()))
                     || expiration == null
-                    || !expiration.toInstant().isAfter(now)
-                    || !StringUtils.hasText(claims.getSubject())
+                    || !expiration.toInstant().plus(providerMetadata.clockSkew()).isAfter(now)
+                    || issuedAt == null
+                    || issuedAt.toInstant().isAfter(now.plus(providerMetadata.clockSkew()))
+                    || !StringUtils.hasText(subject)
                     || !expectedNonce.equals(claims.getStringClaim("nonce"))
-                    || !StringUtils.hasText(claims.getStringClaim("email"))) {
+                    || !StringUtils.hasText(email)
+                    || !Boolean.TRUE.equals(emailVerified)) {
                 throw oauthFailed();
             }
-        } catch (ParseException exception) {
+            return new ValidatedClaims(subject, email);
+        } catch (RuntimeException | ParseException exception) {
             throw oauthFailed();
         }
     }
 
     private RSAKey signingKey(String keyId) {
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(authProperties.oauth().google().jwksUri()))
-                    .timeout(authProperties.oauth().providerTimeout())
+            HttpRequest request = HttpRequest.newBuilder(URI.create(providerMetadata.jwksUri()))
+                    .timeout(providerMetadata.providerTimeout())
                     .header("Accept", "application/json")
                     .GET()
                     .build();
@@ -155,7 +169,7 @@ public class GoogleOAuthClient {
                 return rsaKey;
             }
             throw oauthFailed();
-        } catch (ParseException | java.io.IOException | InterruptedException exception) {
+        } catch (IllegalArgumentException | ParseException | java.io.IOException | InterruptedException exception) {
             if (exception instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
@@ -183,5 +197,8 @@ public class GoogleOAuthClient {
     }
 
     private record TokenResponse(@JsonProperty("id_token") String idToken) {
+    }
+
+    private record ValidatedClaims(String subject, String email) {
     }
 }

@@ -1,6 +1,7 @@
 package com.game.auth.controller;
 
 import com.game.auth.config.AuthProperties;
+import com.game.auth.config.GoogleOAuthProviderMetadata;
 import com.game.auth.model.GoogleIdentity;
 import com.game.auth.model.OAuthTransaction;
 import com.game.auth.security.ClientIpResolver;
@@ -36,6 +37,7 @@ public class GoogleOAuthController {
     private static final String SCOPE = "openid email profile";
 
     private final AuthProperties authProperties;
+    private final GoogleOAuthProviderMetadata providerMetadata;
     private final OAuthStateService stateService;
     private final GoogleOAuthClient googleOAuthClient;
     private final AuthService authService;
@@ -43,11 +45,13 @@ public class GoogleOAuthController {
     private final ClientIpResolver clientIpResolver;
     private final SecureRandom secureRandom;
 
-    public GoogleOAuthController(AuthProperties authProperties, OAuthStateService stateService,
+    public GoogleOAuthController(AuthProperties authProperties, GoogleOAuthProviderMetadata providerMetadata,
+                                 OAuthStateService stateService,
                                  GoogleOAuthClient googleOAuthClient, AuthService authService,
                                  RateLimiterService rateLimiterService, ClientIpResolver clientIpResolver,
                                  SecureRandom secureRandom) {
         this.authProperties = authProperties;
+        this.providerMetadata = providerMetadata;
         this.stateService = stateService;
         this.googleOAuthClient = googleOAuthClient;
         this.authService = authService;
@@ -71,7 +75,7 @@ public class GoogleOAuthController {
         );
         stateService.store(transaction);
         URI authorizationUri = UriComponentsBuilder
-                .fromUriString(authProperties.oauth().google().authorizationUri())
+                .fromUriString(providerMetadata.authorizationUri())
                 .queryParam("response_type", "code")
                 .queryParam("client_id", authProperties.oauth().google().clientId())
                 .queryParam("redirect_uri", authProperties.oauth().google().redirectUri())
