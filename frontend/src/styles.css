@@ -114,6 +114,13 @@ input {
   line-height: 1.02;
 }
 
+.tc-oauth-loading h1 {
+  width: min(100%, 22ch);
+  max-width: none;
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  text-wrap: balance;
+}
+
 .tc-auth-copy p:not(.tc-eyebrow),
 .tc-dashboard p {
   max-width: 42rem;
