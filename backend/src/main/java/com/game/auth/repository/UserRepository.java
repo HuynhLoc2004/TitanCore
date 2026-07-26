@@ -30,6 +30,14 @@ public class UserRepository {
                 """, UUID.class, email, username, passwordHash);
     }
 
+    public UUID createOAuthUser(String email, String username, Instant now) {
+        return jdbcTemplate.queryForObject("""
+                insert into users (email, username, password_hash, email_verified_at, created_at, updated_at)
+                values (?, ?, null, ?, ?, ?)
+                returning id
+                """, UUID.class, email, username, Timestamp.from(now), Timestamp.from(now), Timestamp.from(now));
+    }
+
     public Optional<UserAccount> findByLogin(String login) {
         return jdbcTemplate.query("""
                 select id, email, username, password_hash, status, role, email_verified_at, last_login_at
@@ -44,6 +52,15 @@ public class UserRepository {
                 from users
                 where id = ?
                 """, this::mapOne, id).stream().findFirst();
+    }
+
+    public Optional<UserAccount> findByEmailForUpdate(String email) {
+        return jdbcTemplate.query("""
+                select id, email, username, password_hash, status, role, email_verified_at, last_login_at
+                from users
+                where lower(email) = lower(?)
+                for update
+                """, this::mapOne, email).stream().findFirst();
     }
 
     public void markLastLogin(UUID userId, Instant now) {

@@ -87,6 +87,13 @@ app:
     trusted-proxy:
       enabled: ${TRUSTED_PROXY_ENABLED:false}
       allowed-proxies: ${TRUSTED_PROXY_ALLOWED_PROXIES:}
+    oauth:
+      success-redirect-uri: ${OAUTH_SUCCESS_REDIRECT_URI:http://localhost:5173/app}
+      failure-redirect-uri: ${OAUTH_FAILURE_REDIRECT_URI:http://localhost:5173/login}
+      google:
+        client-id: ${GOOGLE_CLIENT_ID:}
+        client-secret: ${GOOGLE_CLIENT_SECRET:}
+        redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/auth/oauth/google/callback}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
