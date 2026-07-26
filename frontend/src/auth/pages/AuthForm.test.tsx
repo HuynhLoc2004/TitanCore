@@ -71,4 +71,45 @@ describe('AuthForm', () => {
     pending.resolve();
     await waitFor(() => expect(screen.getByRole('button', { name: /register/i })).not.toBeDisabled());
   });
+
+  it('starts Google OAuth with a full-page navigation action', async () => {
+    const onGoogleStart = vi.fn();
+    render(
+      <AuthForm
+        mode="login"
+        onSubmit={vi.fn()}
+        switchLabel="Register"
+        switchAction={vi.fn()}
+        onGoogleStart={onGoogleStart}
+      />,
+    );
+
+    const googleButton = screen.getByRole('button', { name: /continue with google/i });
+    googleButton.focus();
+    expect(googleButton).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+
+    expect(onGoogleStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not start Google OAuth while local submission is active', async () => {
+    const pending = deferred();
+    const onGoogleStart = vi.fn();
+    render(
+      <AuthForm
+        mode="login"
+        onSubmit={() => pending.promise}
+        switchLabel="Register"
+        switchAction={vi.fn()}
+        onGoogleStart={onGoogleStart}
+      />,
+    );
+    await fillLoginForm();
+
+    await userEvent.click(screen.getByRole('button', { name: /start raid/i }));
+    await userEvent.click(screen.getByRole('button', { name: /continue with google/i }));
+
+    expect(onGoogleStart).not.toHaveBeenCalled();
+    pending.resolve();
+  });
 });

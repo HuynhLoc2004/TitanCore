@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   fetchMe,
+  getAuthGeneration,
   invalidateAuthGeneration,
   login,
   logout as apiLogout,
@@ -18,6 +19,7 @@ type AuthContextValue = {
   error: string | null;
   login: (loginValue: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
+  restoreSession: () => Promise<User>;
   logout: () => Promise<void>;
 };
 
@@ -28,10 +30,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const restoreSessionAction = useCallback(async () => {
+    const generation = getAuthGeneration();
+    await refreshAccessToken();
+    const currentUser = await fetchMe();
+    if (generation !== getAuthGeneration()) {
+      setAccessToken(null);
+      throw new Error('Stale authentication restoration');
+    }
+    setUser(currentUser);
+    setStatus('authenticated');
+    return currentUser;
+  }, []);
+
   useEffect(() => {
     let mounted = true;
-    refreshAccessToken()
-      .then(() => fetchMe())
+    if (window.location.pathname === '/auth/oauth/callback') {
+      setStatus('anonymous');
+      return () => {
+        mounted = false;
+      };
+    }
+    restoreSessionAction()
       .then((currentUser) => {
         if (!mounted) {
           return;
@@ -50,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [restoreSessionAction]);
 
   const loginAction = useCallback(async (loginValue: string, password: string) => {
     setError(null);
@@ -84,8 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     error,
     login: loginAction,
     register: registerAction,
+    restoreSession: restoreSessionAction,
     logout: logoutAction,
-  }), [error, loginAction, logoutAction, registerAction, status, user]);
+  }), [error, loginAction, logoutAction, registerAction, restoreSessionAction, status, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

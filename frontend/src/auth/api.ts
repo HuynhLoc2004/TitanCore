@@ -50,6 +50,10 @@ export function invalidateAuthGeneration() {
   refreshPromiseGeneration = -1;
 }
 
+export function getAuthGeneration() {
+  return authGeneration;
+}
+
 export async function fetchCsrfToken() {
   const response = await safeFetch(`${apiBaseUrl}/api/auth/csrf`, {
     credentials: 'include',
