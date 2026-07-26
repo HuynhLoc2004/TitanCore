@@ -2,8 +2,422 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --tc-bg: #10112a;
+  --tc-ink: #fffaf0;
+  --tc-muted: #b9c2ff;
+  --tc-gold: #ffd166;
+  --tc-coral: #ff6b6b;
+  --tc-mint: #45f0b5;
+  --tc-blue: #4dabf7;
+  --tc-violet: #7c5cff;
+  --tc-panel: rgba(28, 27, 64, 0.86);
+  --tc-panel-strong: rgba(16, 17, 42, 0.94);
+  --tc-border: rgba(255, 255, 255, 0.18);
+  --tc-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+  color: var(--tc-ink);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body,
 #root {
   min-height: 100%;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  background: var(--tc-bg);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.tc-auth-stage,
+.tc-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: clamp(1.25rem, 3vw, 3rem);
+}
+
+.tc-auth-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 430px);
+  gap: clamp(1.5rem, 5vw, 4rem);
+  align-items: center;
+  background:
+    radial-gradient(circle at 20% 16%, rgba(255, 209, 102, 0.28), transparent 26rem),
+    radial-gradient(circle at 80% 12%, rgba(69, 240, 181, 0.2), transparent 22rem),
+    linear-gradient(135deg, #111337 0%, #26164c 52%, #10203f 100%);
+}
+
+.tc-auth-stage > * {
+  min-width: 0;
+}
+
+.tc-stars {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.95) 0 1px, transparent 1.5px),
+    radial-gradient(circle, rgba(255, 209, 102, 0.8) 0 1px, transparent 1.5px);
+  background-position: 0 0, 34px 52px;
+  background-size: 96px 96px, 132px 132px;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.tc-moon {
+  position: absolute;
+  top: 8%;
+  right: 12%;
+  width: clamp(72px, 12vw, 132px);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 34% 30%, #fff7b8 0 14%, transparent 15%),
+    linear-gradient(135deg, #fff3a3, #ffb84d);
+  box-shadow: 0 0 44px rgba(255, 209, 102, 0.55);
+}
+
+.tc-auth-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  max-width: 720px;
+}
+
+.tc-auth-copy h1,
+.tc-dashboard h1,
+.tc-loader-card h1 {
+  margin: 0;
+  max-width: 11ch;
+  font-size: clamp(2.6rem, 8vw, 6.8rem);
+  line-height: 0.95;
+  letter-spacing: 0;
+}
+
+.tc-loader-card h1 {
+  font-size: clamp(1.8rem, 5vw, 3.2rem);
+  line-height: 1.02;
+}
+
+.tc-auth-copy p:not(.tc-eyebrow),
+.tc-dashboard p {
+  max-width: 42rem;
+  color: var(--tc-muted);
+  font-size: clamp(1rem, 2vw, 1.25rem);
+}
+
+.tc-eyebrow {
+  margin: 0 0 0.8rem;
+  color: var(--tc-mint);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.tc-auth-card,
+.tc-loader-card,
+.tc-dashboard {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--tc-border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--tc-panel), var(--tc-panel-strong));
+  box-shadow: var(--tc-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.tc-auth-card {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  width: 100%;
+  max-width: 430px;
+  padding: clamp(1.25rem, 4vw, 2rem);
+}
+
+.tc-auth-card h2 {
+  margin: 0;
+  font-size: clamp(1.65rem, 4vw, 2.25rem);
+}
+
+.tc-field {
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+  min-width: 0;
+  color: var(--tc-ink);
+  font-weight: 800;
+}
+
+.tc-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 3.2rem;
+  border: 2px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+  outline: none;
+  padding: 0.8rem 0.95rem;
+}
+
+.tc-field input:focus {
+  border-color: var(--tc-gold);
+  box-shadow: 0 0 0 4px rgba(255, 209, 102, 0.18);
+}
+
+.tc-field small,
+.tc-alert {
+  color: #ffd6d6;
+  font-weight: 700;
+}
+
+.tc-alert {
+  border: 1px solid rgba(255, 107, 107, 0.42);
+  border-radius: 8px;
+  background: rgba(255, 107, 107, 0.13);
+  padding: 0.8rem;
+}
+
+.tc-password-wrap {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.tc-password-wrap .tc-field input {
+  padding-right: 5.2rem;
+}
+
+.tc-icon-button {
+  position: absolute;
+  right: 0.55rem;
+  top: 2rem;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.2rem;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  color: transparent;
+  cursor: pointer;
+  font-weight: 900;
+  overflow: hidden;
+  padding: 0;
+}
+
+.tc-icon-button::before {
+  content: "";
+  width: 1.1rem;
+  height: 0.72rem;
+  border: 2px solid white;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+}
+
+.tc-button,
+.tc-link-button {
+  width: 100%;
+  min-height: 3rem;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 950;
+}
+
+.tc-button {
+  background: linear-gradient(135deg, var(--tc-gold), var(--tc-coral));
+  box-shadow: 0 12px 28px rgba(255, 107, 107, 0.32);
+  color: #221128;
+}
+
+.tc-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.tc-button-secondary {
+  width: fit-content;
+  padding: 0.75rem 1.1rem;
+}
+
+.tc-link-button {
+  background: transparent;
+  color: var(--tc-mint);
+  text-decoration: underline;
+  text-underline-offset: 0.22rem;
+}
+
+.tc-auth-art {
+  position: absolute;
+  bottom: -22%;
+  left: 16%;
+  width: min(42vw, 480px);
+  aspect-ratio: 1.25;
+  opacity: 0.32;
+}
+
+.tc-boss-eye,
+.tc-shield,
+.tc-sword {
+  position: absolute;
+}
+
+.tc-boss-eye {
+  inset: 10% 16% 24% 6%;
+  border-radius: 48% 52% 44% 56%;
+  background: linear-gradient(135deg, #34185f, #ff6b6b);
+  box-shadow: inset -20px -18px 0 rgba(0, 0, 0, 0.18), 0 20px 60px rgba(255, 107, 107, 0.24);
+}
+
+.tc-boss-eye::after {
+  content: "";
+  position: absolute;
+  left: 38%;
+  top: 34%;
+  width: 28%;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(circle, #10112a 0 30%, #ffd166 32% 100%);
+}
+
+.tc-sword {
+  right: 8%;
+  top: 4%;
+  width: 20%;
+  height: 86%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #d8fbff, #4dabf7 48%, #d8fbff);
+  transform: rotate(42deg);
+}
+
+.tc-shield {
+  right: 0;
+  bottom: 0;
+  width: 32%;
+  aspect-ratio: 0.82;
+  border-radius: 48% 48% 40% 40%;
+  background: linear-gradient(135deg, var(--tc-mint), var(--tc-blue));
+  box-shadow: inset -12px -12px 0 rgba(16, 17, 42, 0.2);
+}
+
+.tc-center {
+  display: grid;
+  place-items: center;
+}
+
+.tc-loader-card {
+  display: grid;
+  place-items: center;
+  min-width: min(88vw, 360px);
+  min-height: 260px;
+  padding: 2rem;
+  text-align: center;
+}
+
+.tc-loader-token {
+  width: 74px;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: conic-gradient(from 30deg, var(--tc-gold), var(--tc-mint), var(--tc-coral), var(--tc-gold));
+  animation: tc-spin 1.8s linear infinite;
+}
+
+.tc-dashboard {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 780px;
+  padding: clamp(1.4rem, 4vw, 2.5rem);
+}
+
+.tc-player-card {
+  display: grid;
+  gap: 0.35rem;
+  border: 1px solid var(--tc-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1rem;
+}
+
+.tc-player-card span {
+  color: var(--tc-gold);
+  font-weight: 950;
+}
+
+@keyframes tc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 820px) {
+  .tc-auth-stage {
+    grid-template-columns: 1fr;
+    align-content: center;
+    justify-items: start;
+    padding: 1rem;
+  }
+
+  .tc-auth-copy h1 {
+    max-width: 9ch;
+    font-size: clamp(2rem, 9vw, 2.35rem);
+    overflow-wrap: break-word;
+  }
+
+  .tc-auth-copy,
+  .tc-auth-card {
+    justify-self: start;
+    inline-size: calc(100vw - 2rem);
+    max-inline-size: 358px;
+  }
+
+  .tc-auth-copy p:not(.tc-eyebrow) {
+    max-width: 326px;
+    font-size: 1rem;
+    overflow-wrap: break-word;
+  }
+
+  .tc-password-wrap .tc-field input {
+    padding-right: 4.4rem;
+  }
+
+  .tc-icon-button {
+    right: 0.45rem;
+  }
+
+  .tc-auth-art {
+    bottom: auto;
+    left: auto;
+    right: -10%;
+    top: 4%;
+    width: 240px;
+    opacity: 0.28;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }
