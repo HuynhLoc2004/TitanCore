@@ -303,6 +303,11 @@ class GoogleOAuthIntegrationTests {
     @Test
     void verifiedLocalEmailAutoLinksOnlyWhenTitanCoreEmailIsVerified() throws Exception {
         UUID verifiedUser = insertUser("verified-local@example.com", "verifiedlocal", true, "hash");
+        jdbcTemplate.update("""
+                insert into player_profiles
+                    (user_id, display_name, display_name_key, onboarding_completed_at, updated_at)
+                values (?, ?, ?, now(), now())
+                """, verifiedUser, "verifiedlocal", "verifiedlocal");
         OAuthStart verifiedStart = start();
         prepareToken("verified-code", verifiedStart, "verified-link-subject", "verified-local@example.com", true);
         callback(verifiedStart.state(), "verified-code").andExpect(status().isFound());

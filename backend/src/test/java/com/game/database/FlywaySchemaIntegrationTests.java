@@ -101,7 +101,11 @@ class FlywaySchemaIntegrationTests {
     void createsRequiredIndexesAndUniqueConstraints() {
         assertThat(indexExists("users_email_uq")).isTrue();
         assertThat(indexExists("users_username_uq")).isTrue();
-        assertThat(indexExists("player_profiles_display_name_uq")).isTrue();
+        assertThat(indexExists("player_profiles_display_name_key_uq")).isTrue();
+        assertThat(indexExists("player_profiles_display_name_uq")).isFalse();
+        assertThat(constraintExists("player_profiles_display_name_nonblank_ck")).isTrue();
+        assertThat(constraintExists("player_profiles_display_name_key_nonblank_ck")).isTrue();
+        assertThat(constraintExists("player_profiles_onboarding_timestamp_ck")).isTrue();
         assertThat(indexExists("refresh_tokens_replaced_by_idx")).isTrue();
         assertThat(indexExists("items_rarity_idx")).isTrue();
         assertThat(constraintExists("reward_claims_idempotency_uq")).isTrue();
@@ -450,10 +454,10 @@ class FlywaySchemaIntegrationTests {
 
     private static UUID insertPlayer(UUID userId, String displayName) {
         return jdbcTemplate.queryForObject("""
-                insert into player_profiles (user_id, display_name)
-                values (?, ?)
+                insert into player_profiles (user_id, display_name, display_name_key)
+                values (?, ?, lower(?))
                 returning id
-                """, UUID.class, userId, displayName);
+                """, UUID.class, userId, displayName, displayName);
     }
 
     private static UUID insertBoss() {

@@ -21,6 +21,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.security.KeyPair;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -98,6 +99,83 @@ class AuthIntegrationTests {
         assertThat(count("inventories", "player_id", playerId)).isEqualTo(1);
         assertThat(count("user_sessions", "user_id", userId)).isEqualTo(1);
         assertThat(count("refresh_tokens", "user_id", userId)).isEqualTo(1);
+        MvcResult me = mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken())))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode user = objectMapper.readTree(me.getResponse().getContentAsString());
+        assertThat(user.has("username")).isFalse();
+        assertThat(user.path("profile").path("displayName").isNull()).isTrue();
+        assertThat(user.path("profile").path("onboardingStatus").asText()).isEqualTo("REQUIRED");
+    }
+
+    @Test
+    void completesOnboardingWithNormalizationIdempotencyAndOptimisticLocking() throws Exception {
+        AuthResult auth = register("onboarding@example.com", "internaluser");
+
+        MvcResult completed = mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"  Ra\u0301id\u2002 Hu\u0300ng  ","expectedVersion":0}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode profile = objectMapper.readTree(completed.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        assertThat(profile.path("displayName").asText()).isEqualTo("R\u00E1id H\u00F9ng");
+        assertThat(profile.path("onboardingStatus").asText()).isEqualTo("COMPLETED");
+        assertThat(profile.path("version").asLong()).isEqualTo(1);
+        UUID userId = UUID.fromString(auth.userId());
+        assertThat(count("audit_logs", "actor_user_id", userId)).isEqualTo(2);
+
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"R\u00C1ID H\u00D9NG","expectedVersion":0}
+                                """))
+                .andExpect(status().isOk());
+        assertThat(count("audit_logs", "actor_user_id", userId)).isEqualTo(2);
+
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Different Hero","expectedVersion":1}
+                                """))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void rejectsDuplicateDisplayNamesCsrfAndInactiveAccounts() throws Exception {
+        AuthResult first = register("first-profile@example.com", "firstprofile");
+        AuthResult second = register("second-profile@example.com", "secondprofile");
+        completeOnboarding(first, "Raid Hero", 0);
+
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(second.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"RAID HERO","expectedVersion":0}
+                                """))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/player/profile/onboarding")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(second.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Other Hero","expectedVersion":0}
+                                """))
+                .andExpect(status().isForbidden());
+
+        jdbcTemplate.update("update users set status = 'LOCKED' where id = ?", UUID.fromString(second.userId()));
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(second.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Other Hero","expectedVersion":0}
+                                """))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -364,6 +442,16 @@ class AuthIntegrationTests {
                 .andExpect(status().isOk())
                 .andReturn();
         return authResult(result);
+    }
+
+    private void completeOnboarding(AuthResult auth, String displayName, long expectedVersion) throws Exception {
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"%s","expectedVersion":%d}
+                                """.formatted(displayName, expectedVersion)))
+                .andExpect(status().isOk());
     }
 
     private String loginJson(String login) {

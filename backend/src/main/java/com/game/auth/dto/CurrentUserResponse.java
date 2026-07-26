@@ -5,8 +5,8 @@ import java.util.UUID;
 public record CurrentUserResponse(
         UUID id,
         String email,
-        String username,
         String role,
-        String status
+        String status,
+        ProfileIdentityResponse profile
 ) {
 }

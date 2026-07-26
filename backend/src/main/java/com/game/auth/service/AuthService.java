@@ -20,6 +20,7 @@ import com.game.auth.repository.RefreshTokenRepository;
 import com.game.auth.repository.UserOAuthAccountRepository;
 import com.game.auth.repository.UserRepository;
 import com.game.auth.repository.UserSessionRepository;
+import com.game.player.service.PlayerProfileService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -54,6 +55,7 @@ public class AuthService {
     private final LoginHistoryRepository loginHistoryRepository;
     private final AuditLogRepository auditLogRepository;
     private final UserOAuthAccountRepository userOAuthAccountRepository;
+    private final PlayerProfileService playerProfileService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RefreshTokenGenerator refreshTokenGenerator;
@@ -67,6 +69,7 @@ public class AuthService {
                        RefreshTokenRepository refreshTokenRepository, UserSessionRepository userSessionRepository,
                        LoginHistoryRepository loginHistoryRepository, AuditLogRepository auditLogRepository,
                        UserOAuthAccountRepository userOAuthAccountRepository,
+                       PlayerProfileService playerProfileService,
                        PasswordEncoder passwordEncoder, JwtService jwtService,
                        RefreshTokenGenerator refreshTokenGenerator, TokenHashService tokenHashService,
                        RateLimiterService rateLimiterService, AuthProperties authProperties, Clock clock,
@@ -78,6 +81,7 @@ public class AuthService {
         this.loginHistoryRepository = loginHistoryRepository;
         this.auditLogRepository = auditLogRepository;
         this.userOAuthAccountRepository = userOAuthAccountRepository;
+        this.playerProfileService = playerProfileService;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokenGenerator = refreshTokenGenerator;
@@ -96,7 +100,7 @@ public class AuthService {
         String username = normalize(request.username());
         try {
             UUID userId = userRepository.create(email, username, passwordEncoder.encode(request.password()));
-            UUID playerId = playerFoundationRepository.createProfile(userId, username);
+            UUID playerId = playerFoundationRepository.createProfile(userId);
             playerFoundationRepository.createStatistics(playerId);
             playerFoundationRepository.createSettings(playerId);
             playerFoundationRepository.createInventory(playerId);
@@ -305,7 +309,7 @@ public class AuthService {
                                          RequestContext context, int attempt) {
         String username = generatedUsername(identity.subject(), attempt);
         UUID userId = userRepository.createOAuthUser(email, username, now);
-        UUID playerId = playerFoundationRepository.createProfile(userId, username);
+        UUID playerId = playerFoundationRepository.createProfile(userId);
         playerFoundationRepository.createStatistics(playerId);
         playerFoundationRepository.createSettings(playerId);
         playerFoundationRepository.createInventory(playerId);
@@ -377,7 +381,13 @@ public class AuthService {
     }
 
     private CurrentUserResponse toCurrentUser(UserAccount user) {
-        return new CurrentUserResponse(user.id(), user.email(), user.username(), user.role(), user.status().name());
+        return new CurrentUserResponse(
+                user.id(),
+                user.email(),
+                user.role(),
+                user.status().name(),
+                playerProfileService.identity(user.id())
+        );
     }
 
     private void audit(UUID actor, String action, String targetType, UUID targetId, RequestContext context,

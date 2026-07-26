@@ -17,12 +17,13 @@ public class PlayerFoundationRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public UUID createProfile(UUID userId, String displayName) {
+    public UUID createProfile(UUID userId) {
+        String placeholder = "pending-" + userId;
         return jdbcTemplate.queryForObject("""
-                insert into player_profiles (user_id, display_name)
-                values (?, ?)
+                insert into player_profiles (user_id, display_name, display_name_key)
+                values (?, ?, ?)
                 returning id
-                """, UUID.class, userId, displayName);
+                """, UUID.class, userId, placeholder, placeholder);
     }
 
     public void createStatistics(UUID playerId) {
