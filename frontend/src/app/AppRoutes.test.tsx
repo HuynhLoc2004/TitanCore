@@ -2,7 +2,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AuthProvider } from '../auth/AuthProvider';
-import { AppRoutes } from './AppRoutes';
+import { invalidateAuthGeneration, setAccessToken } from '../auth/api';
+import { AppRoutes, navigate } from './AppRoutes';
 
 const user = {
   id: '3d2c4040-66f6-45b7-9235-1d5d7a4d4586',
@@ -30,6 +31,35 @@ function renderApp(path = '/login') {
       <AppRoutes />
     </AuthProvider>,
   );
+}
+
+function installSuccessfulSessionFetch() {
+  let refreshCount = 0;
+  let meCount = 0;
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/auth/csrf')) {
+      document.cookie = `${csrfCookieName}=${csrfValue}; path=/`;
+      return new Response(null, { status: 204 });
+    }
+    if (url.endsWith('/api/auth/refresh')) {
+      refreshCount += 1;
+      return jsonResponse({
+        accessToken: restoredAccess,
+        accessTokenExpiresAt: '2026-07-26T12:00:00Z',
+        user,
+      });
+    }
+    if (url.endsWith('/api/auth/me')) {
+      meCount += 1;
+      return jsonResponse(user);
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  return {
+    fetchMock,
+    counts: () => ({ refreshCount, meCount }),
+  };
 }
 
 describe('auth routes', () => {
@@ -178,5 +208,137 @@ describe('auth routes', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/checking your raid pass/i);
     expect(screen.queryByRole('heading', { name: /welcome back/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /enter the camp/i })).not.toBeInTheDocument();
+  });
+
+  it('restores an OAuth success callback through refresh and me before routing to app', async () => {
+    const { counts } = installSuccessfulSessionFetch();
+
+    renderApp('/auth/oauth/callback?oauth=success&code=do-not-read&state=do-not-read');
+
+    expect(screen.getByRole('status')).toHaveTextContent(/restoring your raid pass/i);
+    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/app');
+    expect(window.location.search).toBe('');
+    expect(counts()).toEqual({ refreshCount: 1, meCount: 1 });
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('does not duplicate OAuth callback restoration under strict remount-like rerenders', async () => {
+    const { counts } = installSuccessfulSessionFetch();
+
+    renderApp('/auth/oauth/callback?oauth=success');
+
+    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(counts()).toEqual({ refreshCount: 1, meCount: 1 });
+  });
+
+  it('shows a safe OAuth failure message and removes query parameters from history', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 500 }));
+
+    renderApp('/auth/oauth/callback?oauth=failed&code=collision&error_description=raw-provider-detail');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/local login first/i);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/raw-provider-detail/i);
+    expect(window.location.pathname).toBe('/auth/oauth/callback');
+    expect(window.location.search).toBe('');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('uses a generic OAuth failure message for unknown callback codes', async () => {
+    renderApp('/auth/oauth/callback?oauth=failed&code=very_detailed_backend_value');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/did not finish/i);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/very_detailed_backend_value/i);
+  });
+
+  it('does not parse or persist token-like OAuth callback parameters', async () => {
+    installSuccessfulSessionFetch();
+
+    renderApp('/auth/oauth/callback?oauth=success&access_token=url-value&refresh_token=url-value&id_token=url-value');
+
+    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(window.location.href).not.toContain('url-value');
+    expect(window.localStorage.length).toBe(0);
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('does not resurrect authentication when logout invalidates a late OAuth restore', async () => {
+    let releaseRefresh!: () => void;
+    let markRefreshStarted!: () => void;
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshStarted = resolve;
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        document.cookie = `${csrfCookieName}=${csrfValue}; path=/`;
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/api/auth/refresh')) {
+        markRefreshStarted();
+        await new Promise<void>((resolve) => {
+          releaseRefresh = resolve;
+        });
+        return jsonResponse({
+          accessToken: restoredAccess,
+          accessTokenExpiresAt: '2026-07-26T12:00:00Z',
+          user,
+        });
+      }
+      if (url.endsWith('/api/auth/logout')) {
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(user);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/auth/oauth/callback?oauth=success');
+    await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+    await refreshStarted;
+    invalidateAuthGeneration();
+    setAccessToken(null);
+    releaseRefresh();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/did not finish/i);
+    expect(screen.queryByRole('heading', { name: /welcome back/i })).not.toBeInTheDocument();
+  });
+
+  it('does not update callback UI after the callback component unmounts', async () => {
+    let resolveRefresh!: (response: Response) => void;
+    let markRefreshStarted!: () => void;
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshStarted = resolve;
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        document.cookie = `${csrfCookieName}=${csrfValue}; path=/`;
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/api/auth/refresh')) {
+        markRefreshStarted();
+        return new Promise<Response>((resolve) => {
+          resolveRefresh = resolve;
+        });
+      }
+      if (url.endsWith('/api/auth/me')) {
+        return jsonResponse(user);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/auth/oauth/callback?oauth=success');
+    await refreshStarted;
+    navigate('/login', { replace: true });
+    resolveRefresh(jsonResponse({
+      accessToken: restoredAccess,
+      accessTokenExpiresAt: '2026-07-26T12:00:00Z',
+      user,
+    }));
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 });

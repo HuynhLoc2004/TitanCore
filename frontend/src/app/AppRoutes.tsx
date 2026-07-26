@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { LoginPage } from '../auth/pages/LoginPage';
+import { OAuthCallbackPage } from '../auth/pages/OAuthCallbackPage';
 import { RegisterPage } from '../auth/pages/RegisterPage';
 import { useAuth } from '../auth/useAuth';
 
-type Route = '/login' | '/register' | '/app';
+type Route = '/login' | '/register' | '/app' | '/auth/oauth/callback';
 
 function currentRoute(): Route {
   const path = window.location.pathname;
+  if (path === '/auth/oauth/callback') {
+    return '/auth/oauth/callback';
+  }
   if (path === '/register') {
     return '/register';
   }
@@ -16,8 +20,12 @@ function currentRoute(): Route {
   return '/login';
 }
 
-export function navigate(route: Route) {
-  window.history.pushState({}, '', route);
+export function navigate(route: Route, options: { replace?: boolean } = {}) {
+  if (options.replace) {
+    window.history.replaceState({}, '', route);
+  } else {
+    window.history.pushState({}, '', route);
+  }
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
@@ -32,13 +40,17 @@ export function AppRoutes() {
   }, []);
 
   useEffect(() => {
-    if (status === 'authenticated' && route !== '/app') {
+    if (status === 'authenticated' && route !== '/app' && route !== '/auth/oauth/callback') {
       navigate('/app');
     }
     if (status === 'anonymous' && route === '/app') {
       navigate('/login');
     }
   }, [route, status]);
+
+  if (route === '/auth/oauth/callback') {
+    return <OAuthCallbackPage />;
+  }
 
   if (status === 'bootstrapping') {
     return <BootstrapScreen />;
