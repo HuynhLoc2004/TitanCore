@@ -100,7 +100,6 @@ input {
 }
 
 .tc-auth-copy h1,
-.tc-dashboard h1,
 .tc-loader-card h1 {
   margin: 0;
   max-width: 11ch;
@@ -121,8 +120,7 @@ input {
   text-wrap: balance;
 }
 
-.tc-auth-copy p:not(.tc-eyebrow),
-.tc-dashboard p {
+.tc-auth-copy p:not(.tc-eyebrow) {
   max-width: 42rem;
   color: var(--tc-muted);
   font-size: clamp(1rem, 2vw, 1.25rem);
@@ -138,8 +136,7 @@ input {
 }
 
 .tc-auth-card,
-.tc-loader-card,
-.tc-dashboard {
+.tc-loader-card {
   position: relative;
   z-index: 1;
   border: 1px solid var(--tc-border);
@@ -453,25 +450,28 @@ input {
   animation: tc-spin 1.8s linear infinite;
 }
 
-.tc-dashboard {
+.tc-lobby-route-loading {
   display: grid;
-  gap: 1.25rem;
-  max-width: 780px;
-  padding: clamp(1.4rem, 4vw, 2.5rem);
-}
-
-.tc-player-card {
-  display: grid;
-  gap: 0.35rem;
-  border: 1px solid var(--tc-border);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
+  place-items: center;
+  min-height: 100svh;
+  background: var(--tc-bg);
+  color: var(--tc-ink);
   padding: 1rem;
+  text-align: center;
 }
 
-.tc-player-card span {
-  color: var(--tc-gold);
-  font-weight: 950;
+.tc-lobby-route-loading div {
+  width: 72px;
+  aspect-ratio: 1;
+  border: 3px solid rgba(255, 255, 255, 0.18);
+  border-top-color: var(--tc-gold);
+  border-radius: 50%;
+  animation: tc-spin 1.2s linear infinite;
+}
+
+.tc-lobby-route-loading p {
+  color: var(--tc-muted);
+  font-weight: 800;
 }
 
 .tc-onboarding-stage {

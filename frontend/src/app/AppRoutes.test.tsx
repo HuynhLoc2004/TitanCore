@@ -6,6 +6,21 @@ import { AuthProvider } from '../auth/AuthProvider';
 import { invalidateAuthGeneration, setAccessToken } from '../auth/api';
 import { AppRoutes, navigate } from './AppRoutes';
 
+vi.mock('../features/lobby/pages/LobbyPage', async () => {
+  const { useAuth } = await import('../auth/useAuth');
+  return {
+    default: () => {
+      const { logout } = useAuth();
+      return (
+        <main>
+          <h1>Welcome back, Hero</h1>
+          <button type="button" onClick={() => void logout()}>Log out</button>
+        </main>
+      );
+    },
+  };
+});
+
 const user = {
   id: '3d2c4040-66f6-45b7-9235-1d5d7a4d4586',
   email: 'hero@example.com',

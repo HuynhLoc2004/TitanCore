@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { LoginPage } from '../auth/pages/LoginPage';
 import { OAuthCallbackPage } from '../auth/pages/OAuthCallbackPage';
 import { RegisterPage } from '../auth/pages/RegisterPage';
@@ -6,6 +6,7 @@ import { useAuth } from '../auth/useAuth';
 import { ProfileOnboardingPage } from '../player/pages/ProfileOnboardingPage';
 
 type Route = '/login' | '/register' | '/onboarding' | '/app' | '/auth/oauth/callback';
+const LobbyPage = lazy(() => import('../features/lobby/pages/LobbyPage'));
 
 function currentRoute(): Route {
   const path = window.location.pathname;
@@ -35,7 +36,7 @@ export function navigate(route: Route, options: { replace?: boolean } = {}) {
 
 export function AppRoutes() {
   const [route, setRoute] = useState<Route>(currentRoute);
-  const { status, user, logout } = useAuth();
+  const { status, user } = useAuth();
   const redirectRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -90,32 +91,22 @@ export function AppRoutes() {
 
   if (route === '/app' && status === 'authenticated' && user) {
     return (
-      <main className="min-h-screen overflow-hidden bg-[var(--tc-bg)] text-white">
-        <section className="tc-shell">
-          <div className="tc-stars" aria-hidden="true" />
-          <div className="tc-dashboard">
-            <div>
-              <p className="tc-eyebrow">Raid lobby online</p>
-              <h1>Welcome back, {user.profile.displayName}</h1>
-              <p>
-                Your war banner is ready. The boss room opens in the next approved gameplay phase.
-              </p>
-            </div>
-            <div className="tc-player-card">
-              <span>{user.role}</span>
-              <strong>{user.status}</strong>
-              <p>{user.email}</p>
-            </div>
-            <button className="tc-button tc-button-secondary" type="button" onClick={() => void logout()}>
-              Log out
-            </button>
-          </div>
-        </section>
-      </main>
+      <Suspense fallback={<LobbyRouteLoadingShell />}>
+        <LobbyPage />
+      </Suspense>
     );
   }
 
   return <LoginPage onRegister={() => navigate('/register')} />;
+}
+
+export function LobbyRouteLoadingShell() {
+  return (
+    <main className="tc-lobby-route-loading" role="status" aria-live="polite">
+      <div aria-hidden="true" />
+      <p>Opening the raid board</p>
+    </main>
+  );
 }
 
 function BootstrapScreen() {

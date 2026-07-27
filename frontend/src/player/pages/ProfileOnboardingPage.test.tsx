@@ -116,7 +116,7 @@ describe('profile onboarding', () => {
     release();
 
     await waitFor(() => expect(window.location.pathname).toBe('/app'));
-    expect(await screen.findByRole('heading', { name: /welcome back, raid hero/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /choose a boss raid/i })).toBeInTheDocument();
   });
 
   it('preserves the candidate and returns focus for a generic collision', async () => {

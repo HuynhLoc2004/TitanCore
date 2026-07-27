@@ -40,6 +40,7 @@ let accessToken: string | null = null;
 let refreshPromise: Promise<AuthResponse> | null = null;
 let refreshPromiseGeneration = -1;
 let authGeneration = 0;
+const authGenerationListeners = new Set<(generation: number) => void>();
 
 export function getAccessToken() {
   return accessToken;
@@ -53,10 +54,16 @@ export function invalidateAuthGeneration() {
   authGeneration += 1;
   refreshPromise = null;
   refreshPromiseGeneration = -1;
+  authGenerationListeners.forEach((listener) => listener(authGeneration));
 }
 
 export function getAuthGeneration() {
   return authGeneration;
+}
+
+export function subscribeAuthGeneration(listener: (generation: number) => void) {
+  authGenerationListeners.add(listener);
+  return () => authGenerationListeners.delete(listener);
 }
 
 export async function fetchCsrfToken() {
@@ -146,6 +153,23 @@ async function authMutation<T>(path: string, body: unknown) {
 }
 
 export async function apiFetch<T>(path: string, init: RequestInit = {}, allowRefresh = true): Promise<T> {
+  const response = await authenticatedFetchResponse(path, init, allowRefresh);
+
+  if (!response.ok) {
+    throw await toApiError(response);
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function authenticatedFetchResponse(
+  path: string,
+  init: RequestInit = {},
+  allowRefresh = true,
+) {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/problem+json, application/json');
   if (init.body !== undefined) {
@@ -164,26 +188,22 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, allowRef
   if (response.status === 401 && allowRefresh) {
     try {
       await refreshAccessToken();
-      return apiFetch<T>(path, init, false);
+      return authenticatedFetchResponse(path, init, false);
     } catch {
       setAccessToken(null);
     }
   }
 
-  if (!response.ok) {
-    throw await toApiError(response);
-  }
-
-  if (response.status === 204) {
-    return undefined as T;
-  }
-  return response.json() as Promise<T>;
+  return response;
 }
 
 async function safeFetch(input: RequestInfo | URL, init: RequestInit, message: string) {
   try {
     return await fetch(input, init);
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
     throw new ApiError(503, 'NETWORK_UNAVAILABLE', message);
   }
 }
