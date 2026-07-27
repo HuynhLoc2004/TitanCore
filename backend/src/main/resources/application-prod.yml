@@ -1,4 +1,10 @@
 spring:
+  flyway:
+    user: ${FLYWAY_USER}
+    password: ${FLYWAY_PASSWORD}
+    placeholders:
+      runtimeRole: ${POSTGRES_USER}
+      enforceRoleSeparation: "true"
   jpa:
     show-sql: false
     hibernate:

@@ -8,6 +8,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,6 +52,10 @@ class ProfileOnboardingMigrationIntegrationTests {
         Flyway latest = Flyway.configure()
                 .dataSource(dataSource)
                 .locations("classpath:db/migration")
+                .placeholders(Map.of(
+                        "runtimeRole", POSTGRES.getUsername(),
+                        "enforceRoleSeparation", "false"
+                ))
                 .validateOnMigrate(true)
                 .baselineOnMigrate(false)
                 .cleanDisabled(true)

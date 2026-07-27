@@ -12,7 +12,7 @@ begin
     if jsonb_typeof(candidate) = 'object' then
         for item in select key, value from jsonb_each(candidate)
         loop
-            normalized_key := regexp_replace(lower(item.key), '[_-]', '', 'g');
+            normalized_key := regexp_replace(lower(item.key), '[^a-z0-9]', '', 'g');
             if normalized_key in (
                 'html',
                 'script',
@@ -42,8 +42,23 @@ begin
                 'href',
                 'dangerouslysetinnerhtml'
             )
-                or normalized_key ~ '^on[a-z]+$'
-                or normalized_key ~ '(script|html|css|component|permission|command|expression|redirect)'
+                or normalized_key ~ (
+                    '^(required|allowed|access)?(role|roles|authority|authorities|'
+                    'permission|permissions|entitlement|entitlements|scope|scopes|'
+                    'acl|accesspolicy)$'
+                )
+                or normalized_key ~ (
+                    '^(navigation(target)?|destination(path)?|route(key|path)?|path|'
+                    'external(url)?|redirect(url)?|scheme)$'
+                )
+                or normalized_key ~ (
+                    '^(actions?|actioncommand|commands?|handlers?|callbacks?|'
+                    'eventhandlers?|executables?|expressions?|on[a-z]+)$'
+                )
+                or normalized_key ~ (
+                    '^([a-z]*(script|html|css)[a-z]*|component(type|name)?|'
+                    'styles?|styletokens?|themetokens?)$'
+                )
             then
                 return false;
             end if;
@@ -70,6 +85,9 @@ begin
     return true;
 end;
 $$;
+
+comment on function content_payload_is_safe(jsonb) is
+    'Recursive database defense-in-depth. The typed content API registry remains authoritative.';
 
 create function reject_immutable_content_history()
 returns trigger
@@ -177,10 +195,10 @@ create table content_versions (
     )
 );
 
-create index content_versions_history_idx
-    on content_versions (entry_id, version_number desc);
 create index content_versions_checksum_idx
     on content_versions (checksum);
+comment on column content_versions.checksum is
+    'SHA-256 of PostgreSQL canonical JSONB text; not a provider-independent canonical JSON digest.';
 create index content_versions_author_idx
     on content_versions (created_by_user_id)
     where created_by_user_id is not null;
@@ -222,6 +240,24 @@ for each row execute function enforce_next_content_version();
 create trigger content_versions_immutable_trg
 before update or delete on content_versions
 for each row execute function reject_immutable_content_history();
+
+create function lock_content_version(target_content_version_id uuid)
+returns void
+language sql
+as $$
+    select pg_advisory_xact_lock(
+        hashtextextended('content-version:' || target_content_version_id::text, 0)
+    );
+$$;
+
+create function lock_asset_object(target_asset_id uuid)
+returns void
+language sql
+as $$
+    select pg_advisory_xact_lock(
+        hashtextextended('asset-object:' || target_asset_id::text, 0)
+    );
+$$;
 
 create table content_publications (
     id uuid primary key default gen_random_uuid(),
@@ -292,17 +328,64 @@ create index content_publications_publisher_idx
     on content_publications (published_by_user_id)
     where published_by_user_id is not null;
 
+create view content_publication_effective_windows as
+select publication.id,
+       publication.content_version_id,
+       publication.supersedes_publication_id,
+       publication.slot_key,
+       publication.channel,
+       publication.locale,
+       publication.audience_key,
+       publication.starts_at,
+       case
+           when replacement.id is null then publication.ends_at
+           when publication.ends_at is null then replacement.starts_at
+           else least(publication.ends_at, replacement.starts_at)
+       end as effective_ends_at
+from content_publications publication
+left join content_publications replacement
+    on replacement.supersedes_publication_id = publication.id;
+
 create function validate_content_publication()
 returns trigger
 language plpgsql
 as $$
 declare
     entry_archived_at timestamptz;
+    dependency_ids_before uuid[];
+    dependency_ids_after uuid[];
+    dependency_id uuid;
+    superseded content_publications%rowtype;
+    superseded_effective_end timestamptz;
     overlapping_id uuid;
     overlapping_count integer;
 begin
+    select coalesce(array_agg(asset_id order by asset_id), array[]::uuid[])
+    into dependency_ids_before
+    from (
+        select distinct asset_id
+        from content_version_assets
+        where content_version_id = new.content_version_id
+    ) dependencies;
+    foreach dependency_id in array dependency_ids_before
+    loop
+        perform lock_asset_object(dependency_id);
+    end loop;
+    perform lock_content_version(new.content_version_id);
+    select coalesce(array_agg(asset_id order by asset_id), array[]::uuid[])
+    into dependency_ids_after
+    from (
+        select distinct asset_id
+        from content_version_assets
+        where content_version_id = new.content_version_id
+    ) dependencies;
+    if dependency_ids_after is distinct from dependency_ids_before then
+        raise exception 'content dependencies changed while publication was being serialized'
+            using errcode = '40001';
+    end if;
     perform pg_advisory_xact_lock(hashtextextended(
-        new.channel || ':' || new.locale || ':' || new.audience_key || ':' || new.slot_key,
+        'publication-slot:' || new.channel || ':' || new.locale || ':'
+            || new.audience_key || ':' || new.slot_key,
         0
     ));
 
@@ -316,22 +399,56 @@ begin
             using errcode = '55000';
     end if;
 
+    if new.supersedes_publication_id is not null then
+        select *
+        into superseded
+        from content_publications
+        where id = new.supersedes_publication_id;
+
+        if superseded.id is null
+            or superseded.channel <> new.channel
+            or superseded.locale <> new.locale
+            or superseded.audience_key <> new.audience_key
+            or superseded.slot_key <> new.slot_key
+        then
+            raise exception 'content_publications_supersession_ck: predecessor slot identity differs'
+                using errcode = '23514',
+                      constraint = 'content_publications_supersession_ck';
+        end if;
+
+        if exists (
+            select 1
+            from content_publications
+            where supersedes_publication_id = superseded.id
+        ) then
+            raise exception 'content_publications_supersession_ck: predecessor is not the current chain leaf'
+                using errcode = '23514',
+                      constraint = 'content_publications_supersession_ck';
+        end if;
+
+        superseded_effective_end := superseded.ends_at;
+        if new.starts_at <= superseded.starts_at
+            or (
+                superseded_effective_end is not null
+                and new.starts_at >= superseded_effective_end
+            )
+        then
+            raise exception 'content_publications_supersession_ck: invalid predecessor effective range'
+                using errcode = '23514',
+                      constraint = 'content_publications_supersession_ck';
+        end if;
+    end if;
+
     select min(publication.id::text)::uuid, count(*)
     into overlapping_id, overlapping_count
-    from content_publications publication
-    left join content_publications replacement
-        on replacement.supersedes_publication_id = publication.id
+    from content_publication_effective_windows publication
     where publication.channel = new.channel
       and publication.locale = new.locale
       and publication.audience_key = new.audience_key
       and publication.slot_key = new.slot_key
       and tstzrange(
           publication.starts_at,
-          case
-              when replacement.id is null then publication.ends_at
-              when publication.ends_at is null then replacement.starts_at
-              else least(publication.ends_at, replacement.starts_at)
-          end,
+          publication.effective_ends_at,
           '[)'
       )
           && tstzrange(new.starts_at, new.ends_at, '[)')
@@ -360,7 +477,7 @@ begin
         where binding.content_version_id = new.content_version_id
           and asset.review_state <> 'APPROVED'
     ) then
-        raise exception 'published content may reference only approved assets'
+        raise exception 'new publications may reference only approved assets'
             using errcode = '23514',
                   constraint = 'content_publications_approved_assets_ck';
     end if;
@@ -490,6 +607,16 @@ begin
         end if;
         return old;
     end if;
+    if new.review_state is distinct from old.review_state then
+        perform lock_asset_object(old.id);
+        perform lock_content_version(binding.content_version_id)
+        from (
+            select distinct content_version_id
+            from content_version_assets
+            where asset_id = old.id
+            order by content_version_id
+        ) binding;
+    end if;
     if new.id is distinct from old.id
         or new.object_key is distinct from old.object_key
         or new.media_category is distinct from old.media_category
@@ -524,6 +651,9 @@ $$;
 create trigger asset_objects_protect_trg
 before update or delete on asset_objects
 for each row execute function protect_asset_object();
+
+comment on column asset_objects.review_state is
+    'ARCHIVED blocks new binding/publication; immutable published dependencies remain deliverable.';
 
 create table asset_variants (
     id uuid primary key default gen_random_uuid(),
@@ -612,8 +742,6 @@ create table asset_variants (
     )
 );
 
-create index asset_variants_asset_idx
-    on asset_variants (asset_id);
 create index asset_variants_checksum_idx
     on asset_variants (checksum);
 
@@ -743,6 +871,8 @@ begin
         raise exception 'content version asset bindings are immutable'
             using errcode = '55000';
     end if;
+    perform lock_asset_object(new.asset_id);
+    perform lock_content_version(new.content_version_id);
     if exists (
         select 1
         from content_publications
@@ -751,6 +881,16 @@ begin
         raise exception 'published content versions cannot gain asset bindings'
             using errcode = '55000';
     end if;
+    if exists (
+        select 1
+        from asset_objects asset
+        where asset.id = new.asset_id
+          and asset.review_state in ('REJECTED', 'ARCHIVED')
+    ) then
+        raise exception 'new bindings cannot reference rejected or archived assets'
+            using errcode = '23514',
+                  constraint = 'content_version_assets_selectable_asset_ck';
+    end if;
     return new;
 end;
 $$;
@@ -758,3 +898,49 @@ $$;
 create trigger content_version_assets_protect_trg
 before insert or update or delete on content_version_assets
 for each row execute function protect_content_version_asset();
+
+do $$
+declare
+    runtime_role_name text := '${runtimeRole}';
+    enforce_role_separation boolean := '${enforceRoleSeparation}'::boolean;
+begin
+    if runtime_role_name !~ '^[A-Za-z_][A-Za-z0-9_$-]*$' then
+        raise exception 'invalid configured runtime database role';
+    end if;
+    if enforce_role_separation and runtime_role_name = current_user then
+        raise exception 'production Flyway owner and runtime database roles must differ';
+    end if;
+    if not exists (select 1 from pg_roles where rolname = runtime_role_name) then
+        if enforce_role_separation then
+            raise exception 'configured runtime database role does not exist';
+        end if;
+        return;
+    end if;
+
+    execute format(
+        'grant select, insert, update on content_entries to %I',
+        runtime_role_name
+    );
+    execute format(
+        'grant select, insert, update, delete on asset_objects to %I',
+        runtime_role_name
+    );
+    execute format(
+        'grant select, insert on content_versions, content_publications, '
+        || 'content_version_assets to %I',
+        runtime_role_name
+    );
+    execute format(
+        'grant select, insert, delete on asset_variants to %I',
+        runtime_role_name
+    );
+    execute format(
+        'grant select on content_publication_effective_windows to %I',
+        runtime_role_name
+    );
+    execute format(
+        'grant execute on function content_payload_is_safe(jsonb) to %I',
+        runtime_role_name
+    );
+end;
+$$;
