@@ -8,15 +8,26 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.HexFormat;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.game.config.DatabaseRoleStartupValidator;
+import com.game.GameBackendApplication;
+import com.game.auth.TestKeys;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.boot.web.context.WebServerInitializedEvent;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -83,6 +94,11 @@ class DynamicContentRuntimeRoleIntegrationTests {
 
         UUID entryId = insertEntry("runtime.allowed");
         UUID versionId = insertVersion(entryId);
+        UUID reviewerId = ownerJdbc.queryForObject("""
+                insert into users (email, username, password_hash)
+                values ('runtime-reviewer@example.com', 'runtimereviewer', 'hash')
+                returning id
+                """, UUID.class);
         UUID assetId = runtimeJdbc.queryForObject("""
                 insert into asset_objects (
                     object_key, media_category, media_type, byte_size, checksum,
@@ -92,16 +108,57 @@ class DynamicContentRuntimeRoleIntegrationTests {
                     repeat('a', 64), 'DRAFT', 64, 64
                 ) returning id
                 """, UUID.class);
+        UUID variantId = runtimeJdbc.queryForObject("""
+                insert into asset_variants (
+                    asset_id, media_category, variant_key, object_key,
+                    format, media_type, checksum, byte_size, width, height
+                ) values (
+                    ?, 'IMAGE', 'CARD', 'runtime/allowed-card.webp',
+                    'WEBP', 'image/webp', repeat('b', 64), 512, 32, 32
+                ) returning id
+                """, UUID.class, assetId);
         assertThat(runtimeJdbc.update("""
                 update asset_objects
-                set review_state = 'IN_REVIEW', updated_at = now()
+                set review_state = 'APPROVED',
+                    reviewed_by_user_id = ?,
+                    reviewed_at = now(),
+                    updated_at = now()
                 where id = ?
-                """, assetId)).isOne();
+                """, reviewerId, assetId)).isOne();
         assertThat(runtimeJdbc.update("""
                 insert into content_version_assets (
-                    content_version_id, asset_id, role_key, sort_order
-                ) values (?, ?, 'PRIMARY', 0)
-                """, versionId, assetId)).isOne();
+                    content_version_id, asset_id, asset_variant_id,
+                    role_key, sort_order
+                ) values (?, ?, ?, 'PRIMARY', 0)
+                """, versionId, assetId, variantId)).isOne();
+        UUID publicationId = runtimeJdbc.queryForObject("""
+                insert into content_publications (
+                    content_version_id, slot_key, channel, locale,
+                    audience_key, starts_at
+                ) values (
+                    ?, 'runtime.allowed', 'WEB', 'vi-VN', 'ALL', ?
+                ) returning id
+                """, UUID.class, versionId,
+                OffsetDateTime.now(ZoneOffset.UTC).plusHours(1));
+        assertThat(publicationId).isNotNull();
+        assertThat(runtimeJdbc.queryForObject("""
+                select count(*)
+                from content_publication_effective_windows publication
+                join content_version_assets binding
+                  on binding.content_version_id = publication.content_version_id
+                join asset_objects asset on asset.id = binding.asset_id
+                where publication.id = ?
+                  and binding.asset_id = ?
+                  and binding.asset_variant_id = ?
+                  and asset.review_state = 'APPROVED'
+                """, Integer.class, publicationId, assetId, variantId)).isOne();
+        assertThat(runtimeJdbc.queryForObject("""
+                select count(*)
+                from content_version_assets binding
+                join asset_objects asset on asset.id = binding.asset_id
+                where binding.content_version_id = ?
+                  and asset.review_state <> 'APPROVED'
+                """, Integer.class, versionId)).isZero();
     }
 
     @Test
@@ -141,18 +198,37 @@ class DynamicContentRuntimeRoleIntegrationTests {
     }
 
     @Test
-    void startupValidationStillRejectsOwnerAfterMigrationsAreApplied() {
+    void actualProductionStartupRejectsOwnerAndAcceptsRestrictedRuntime() {
         assertThat(flyway.info().pending()).isEmpty();
-        assertThatThrownBy(() -> startRoleValidationContext(ownerJdbc))
+        int migrationCountBefore = successfulMigrationCount();
+        StartupEvents unsafeEvents = new StartupEvents();
+
+        assertThatThrownBy(() -> startApplication(
+                MIGRATION_OWNER, MIGRATION_PASSWORD, unsafeEvents))
                 .rootCause()
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage(
                         "Production database role separation could not be verified safely");
+        assertThat(unsafeEvents.ready().get()).isFalse();
+        assertThat(unsafeEvents.webServerInitialized().get()).isFalse();
+        assertThat(flyway.info().pending()).isEmpty();
+        assertThat(successfulMigrationCount()).isEqualTo(migrationCountBefore);
 
-        try (GenericApplicationContext context =
-                     startRoleValidationContext(runtimeJdbc)) {
+        StartupEvents safeEvents = new StartupEvents();
+        ConfigurableApplicationContext context =
+                startApplication(RUNTIME_ROLE, RUNTIME_PASSWORD, safeEvents);
+        try {
             assertThat(context.isActive()).isTrue();
+            assertThat(safeEvents.ready().get()).isTrue();
+            assertThat(safeEvents.webServerInitialized().get()).isTrue();
+            assertThat(context.getBean(JdbcTemplate.class).queryForObject(
+                    "select current_user", String.class)).isEqualTo(RUNTIME_ROLE);
+            assertThat(context.getBean(Flyway.class).info().pending()).isEmpty();
+            assertThat(successfulMigrationCount()).isEqualTo(migrationCountBefore);
+        } finally {
+            context.close();
         }
+        assertThat(context.isActive()).isFalse();
     }
 
     @Test
@@ -262,21 +338,72 @@ class DynamicContentRuntimeRoleIntegrationTests {
         }
     }
 
-    private static GenericApplicationContext startRoleValidationContext(
-            JdbcTemplate jdbcTemplate
+    private static ConfigurableApplicationContext startApplication(
+            String runtimeUsername,
+            String runtimePassword,
+            StartupEvents events
     ) {
-        GenericApplicationContext context = new GenericApplicationContext();
-        context.registerBean("flywayInitializer", Object.class, Object::new);
-        context.registerBean(
-                DatabaseRoleStartupValidator.class,
-                () -> new DatabaseRoleStartupValidator(jdbcTemplate, MIGRATION_OWNER)
-        );
-        try {
-            context.refresh();
-            return context;
-        } catch (RuntimeException exception) {
-            context.close();
-            throw exception;
+        SpringApplication application = new SpringApplicationBuilder(
+                GameBackendApplication.class)
+                .profiles("prod")
+                .web(WebApplicationType.SERVLET)
+                .properties(productionProperties(runtimeUsername, runtimePassword))
+                .build();
+        application.addListeners(event -> {
+            if (event instanceof ApplicationReadyEvent) {
+                events.ready().set(true);
+            }
+            if (event instanceof WebServerInitializedEvent) {
+                events.webServerInitialized().set(true);
+            }
+        });
+        return application.run();
+    }
+
+    private static Map<String, Object> productionProperties(
+            String runtimeUsername,
+            String runtimePassword
+    ) {
+        var keyPair = TestKeys.generateRsa();
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("SERVER_PORT", "0");
+        properties.put("POSTGRES_HOST", POSTGRES.getHost());
+        properties.put("POSTGRES_PORT", POSTGRES.getMappedPort(5432));
+        properties.put("POSTGRES_DB", POSTGRES.getDatabaseName());
+        properties.put("POSTGRES_USER", runtimeUsername);
+        properties.put("POSTGRES_PASSWORD", runtimePassword);
+        properties.put("FLYWAY_USER", MIGRATION_OWNER);
+        properties.put("FLYWAY_PASSWORD", MIGRATION_PASSWORD);
+        properties.put("spring.data.redis.host", "127.0.0.1");
+        properties.put("spring.data.redis.port", "1");
+        properties.put("JWT_PRIVATE_KEY", TestKeys.privatePem(keyPair));
+        properties.put("JWT_PUBLIC_KEY", TestKeys.publicPem(keyPair));
+        properties.put("AUTH_RATE_LIMIT_KEY_SECRET", randomPassword());
+        properties.put("AUTH_LOGIN_HISTORY_KEY_SECRET", randomPassword());
+        properties.put("GOOGLE_CLIENT_ID", "test-google-client");
+        properties.put("GOOGLE_CLIENT_SECRET", randomPassword());
+        properties.put("GOOGLE_REDIRECT_URI",
+                "https://test.titancore.invalid/api/auth/oauth/google/callback");
+        properties.put("OAUTH_SUCCESS_REDIRECT_URI",
+                "https://test.titancore.invalid/auth/oauth/callback");
+        properties.put("OAUTH_FAILURE_REDIRECT_URI",
+                "https://test.titancore.invalid/auth/oauth/callback");
+        properties.put("CORS_ALLOWED_ORIGINS", "https://test.titancore.invalid");
+        return properties;
+    }
+
+    private static int successfulMigrationCount() {
+        return Objects.requireNonNull(ownerJdbc.queryForObject("""
+                select count(*) from flyway_schema_history where success
+                """, Integer.class));
+    }
+
+    private record StartupEvents(
+            AtomicBoolean ready,
+            AtomicBoolean webServerInitialized
+    ) {
+        private StartupEvents() {
+            this(new AtomicBoolean(), new AtomicBoolean());
         }
     }
 }
