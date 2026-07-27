@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import com.game.auth.service.AuthException;
 import com.game.auth.service.RateLimitException;
+import com.game.lobby.service.LobbyBootstrapException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -65,6 +66,19 @@ public class GlobalExceptionHandler {
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .header(HttpHeaders.RETRY_AFTER, Long.toString(exception.retryAfterSeconds()))
                 .body(body);
+    }
+
+    @ExceptionHandler(LobbyBootstrapException.class)
+    public ResponseEntity<ProblemDetail> handleLobby(
+            LobbyBootstrapException exception,
+            HttpServletRequest request
+    ) {
+        return problem(
+                exception.status(),
+                exception.code(),
+                exception.getMessage(),
+                request.getRequestURI()
+        );
     }
 
     @ExceptionHandler(Exception.class)

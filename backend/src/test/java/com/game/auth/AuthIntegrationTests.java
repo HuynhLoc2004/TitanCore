@@ -26,6 +26,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.security.KeyPair;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -39,6 +40,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -90,6 +92,106 @@ class AuthIntegrationTests {
         registry.add("app.auth.rate-limit.window", () -> "2m");
         registry.add("app.auth.trusted-proxy.enabled", () -> "false");
         registry.add("app.cors.allowed-origins", () -> "http://localhost:5173");
+    }
+
+    @Test
+    void lobbyBootstrapRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/lobby/bootstrap"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_TYPE,
+                        MediaType.APPLICATION_PROBLEM_JSON_VALUE
+                ));
+    }
+
+    @Test
+    void lobbyBootstrapRequiresOnboardingAndNeverExposesInternalIdentity()
+            throws Exception {
+        AuthResult auth = register("lobby-user@example.com", "lobbyinternal");
+        MockHttpServletRequestBuilder request = get("/api/lobby/bootstrap")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.accessToken())
+                .header(HttpHeaders.ACCEPT_LANGUAGE, "en-US");
+
+        MvcResult incomplete = mockMvc.perform(request)
+                .andExpect(status().isConflict())
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_TYPE,
+                        MediaType.APPLICATION_PROBLEM_JSON_VALUE
+                ))
+                .andReturn();
+        assertThat(incomplete.getResponse().getContentAsString())
+                .contains("PROFILE_ONBOARDING_REQUIRED")
+                .doesNotContain("lobbyinternal", "lobby-user@example.com");
+
+        playerProfileService.completeOnboarding(
+                UUID.fromString(auth.userId()),
+                new CompleteOnboardingRequest("Lobby Titan", 0),
+                "127.0.0.1"
+        );
+        MvcResult completed = mockMvc.perform(request)
+                .andExpect(status().isOk())
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_TYPE,
+                        MediaType.APPLICATION_JSON_VALUE
+                ))
+                .andExpect(header().string(HttpHeaders.CONTENT_LANGUAGE, "en-US"))
+                .andExpect(header().string(HttpHeaders.ETAG,
+                        org.hamcrest.Matchers.startsWith("W/\"")))
+                .andExpect(header().string(
+                        HttpHeaders.CACHE_CONTROL,
+                        "private, no-cache, must-revalidate"
+                ))
+                .andExpect(header().string(
+                        HttpHeaders.VARY,
+                        "Authorization, Accept-Language, Origin"
+                ))
+                .andReturn();
+        assertThat(completed.getResponse().getContentAsString())
+                .contains("Lobby Titan")
+                .doesNotContain("lobbyinternal", "lobby-user@example.com", "object_key");
+
+        String etag = Objects.requireNonNull(
+                completed.getResponse().getHeader(HttpHeaders.ETAG));
+        mockMvc.perform(request.header(HttpHeaders.IF_NONE_MATCH, etag))
+                .andExpect(status().isNotModified())
+                .andExpect(header().string(HttpHeaders.ETAG, etag))
+                .andExpect(header().string(
+                        HttpHeaders.VARY,
+                        "Authorization, Accept-Language, Origin"
+                ))
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    void lobbyBootstrapRejectsRevokedSessionAndInactiveAccount() throws Exception {
+        AuthResult revoked = register("lobby-revoked@example.com", "lobbyrevoked");
+        playerProfileService.completeOnboarding(
+                UUID.fromString(revoked.userId()),
+                new CompleteOnboardingRequest("Revoked Titan", 0),
+                "127.0.0.1"
+        );
+        UUID sessionId = firstSessionId(revoked.accessToken());
+        jdbcTemplate.update("""
+                update user_sessions
+                set ended_at = now()
+                where id = ?
+                """, sessionId);
+
+        mockMvc.perform(get("/api/lobby/bootstrap")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                bearer(revoked.accessToken())))
+                .andExpect(status().isUnauthorized());
+
+        AuthResult inactive = register("lobby-banned@example.com", "lobbybanned");
+        jdbcTemplate.update(
+                "update users set status = 'BANNED' where id = ?",
+                UUID.fromString(inactive.userId())
+        );
+
+        mockMvc.perform(get("/api/lobby/bootstrap")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                bearer(inactive.accessToken())))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
