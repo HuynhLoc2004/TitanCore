@@ -2,6 +2,9 @@ package com.game.auth;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.game.auth.service.AuthException;
+import com.game.player.dto.CompleteOnboardingRequest;
+import com.game.player.service.PlayerProfileService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -21,14 +24,17 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.security.KeyPair;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -66,6 +72,9 @@ class AuthIntegrationTests {
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private PlayerProfileService playerProfileService;
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
@@ -98,6 +107,178 @@ class AuthIntegrationTests {
         assertThat(count("inventories", "player_id", playerId)).isEqualTo(1);
         assertThat(count("user_sessions", "user_id", userId)).isEqualTo(1);
         assertThat(count("refresh_tokens", "user_id", userId)).isEqualTo(1);
+        MvcResult me = mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken())))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode user = objectMapper.readTree(me.getResponse().getContentAsString());
+        assertThat(user.has("username")).isFalse();
+        assertThat(user.path("profile").path("displayName").isNull()).isTrue();
+        assertThat(user.path("profile").path("onboardingStatus").asText()).isEqualTo("REQUIRED");
+    }
+
+    @Test
+    void completesOnboardingWithNormalizationIdempotencyAndOptimisticLocking() throws Exception {
+        AuthResult auth = register("onboarding@example.com", "internaluser");
+
+        MvcResult completed = mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"  Ra\u0301id\u2002 Hu\u0300ng  ","expectedVersion":0}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode profile = objectMapper.readTree(completed.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        assertThat(profile.path("displayName").asText()).isEqualTo("R\u00E1id H\u00F9ng");
+        assertThat(profile.path("onboardingStatus").asText()).isEqualTo("COMPLETED");
+        assertThat(profile.path("version").asLong()).isEqualTo(1);
+        UUID userId = UUID.fromString(auth.userId());
+        assertThat(count("audit_logs", "actor_user_id", userId)).isEqualTo(2);
+
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"R\u00C1ID H\u00D9NG","expectedVersion":0}
+                                """))
+                .andExpect(status().isOk());
+        assertThat(count("audit_logs", "actor_user_id", userId)).isEqualTo(2);
+
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Different Hero","expectedVersion":1}
+                                """))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void rejectsDuplicateDisplayNamesCsrfAndInactiveAccounts() throws Exception {
+        AuthResult first = register("first-profile@example.com", "firstprofile");
+        AuthResult second = register("second-profile@example.com", "secondprofile");
+        completeOnboarding(first, "Raid Hero", 0);
+
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(second.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"RAID HERO","expectedVersion":0}
+                                """))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/player/profile/onboarding")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(second.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Other Hero","expectedVersion":0}
+                                """))
+                .andExpect(status().isForbidden());
+
+        jdbcTemplate.update("update users set status = 'LOCKED' where id = ?", UUID.fromString(second.userId()));
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(second.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"Other Hero","expectedVersion":0}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void concurrentIdenticalOnboardingIsLogicallyIdempotentAndAuditedOnce() throws Exception {
+        AuthResult auth = register("same-race@example.com", "samerace");
+        UUID userId = UUID.fromString(auth.userId());
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<String> completion = () -> {
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Concurrent onboarding test did not start");
+            }
+            return playerProfileService.completeOnboarding(
+                    userId,
+                    new CompleteOnboardingRequest("Same Race Hero", 0),
+                    "203.0.113.31"
+            ).onboardingStatus();
+        };
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> first = executor.submit(completion);
+            Future<String> second = executor.submit(completion);
+            start.countDown();
+
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder("COMPLETED", "COMPLETED");
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(profileVersion(userId)).isEqualTo(1);
+        assertThat(onboardingAuditCount(userId)).isEqualTo(1);
+        assertThat(profileDisplayName(userId)).isEqualTo("Same Race Hero");
+    }
+
+    @Test
+    void differentUsersRacingForCanonicalNameHaveOneWinnerAndNoPartialState() throws Exception {
+        AuthResult firstAuth = register("name-race-one@example.com", "nameraceone");
+        AuthResult secondAuth = register("name-race-two@example.com", "nameracetwo");
+        UUID firstUserId = UUID.fromString(firstAuth.userId());
+        UUID secondUserId = UUID.fromString(secondAuth.userId());
+        CountDownLatch start = new CountDownLatch(1);
+        Callable<String> first = onboardingRaceCall(firstUserId, start, "203.0.113.41");
+        Callable<String> second = onboardingRaceCall(secondUserId, start, "203.0.113.42");
+        var executor = Executors.newFixedThreadPool(2);
+        List<String> results;
+        try {
+            Future<String> firstResult = executor.submit(first);
+            Future<String> secondResult = executor.submit(second);
+            start.countDown();
+            results = List.of(firstResult.get(10, TimeUnit.SECONDS), secondResult.get(10, TimeUnit.SECONDS));
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(results).containsExactlyInAnyOrder("COMPLETED", "DISPLAY_NAME_UNAVAILABLE");
+        assertThat(List.of(profileVersion(firstUserId), profileVersion(secondUserId)))
+                .containsExactlyInAnyOrder(0L, 1L);
+        assertThat(onboardingAuditCount(firstUserId) + onboardingAuditCount(secondUserId)).isEqualTo(1);
+        assertThat(completedProfileCount(firstUserId, secondUserId)).isEqualTo(1);
+    }
+
+    @Test
+    void auditFailureRollsBackEveryProfileMutationAndLeavesNoFalseSuccess() throws Exception {
+        AuthResult auth = register("audit-rollback@example.com", "auditrollback");
+        UUID userId = UUID.fromString(auth.userId());
+        ProfileState before = profileState(userId);
+        jdbcTemplate.execute("""
+                create function test_reject_onboarding_audit() returns trigger
+                language plpgsql as $$
+                begin
+                    if new.action = 'PLAYER_ONBOARDING_COMPLETED' then
+                        raise exception 'forced onboarding audit failure';
+                    end if;
+                    return new;
+                end
+                $$
+                """);
+        jdbcTemplate.execute("""
+                create trigger test_reject_onboarding_audit_trigger
+                before insert on audit_logs
+                for each row execute function test_reject_onboarding_audit()
+                """);
+        try {
+            assertThatThrownBy(() -> playerProfileService.completeOnboarding(
+                    userId,
+                    new CompleteOnboardingRequest("Rollback Hero", 0),
+                    "203.0.113.51"
+            )).isInstanceOf(org.springframework.dao.DataAccessException.class);
+
+            assertThat(profileState(userId)).isEqualTo(before);
+            assertThat(onboardingAuditCount(userId)).isZero();
+        } finally {
+            jdbcTemplate.execute("drop trigger if exists test_reject_onboarding_audit_trigger on audit_logs");
+            jdbcTemplate.execute("drop function if exists test_reject_onboarding_audit()");
+        }
     }
 
     @Test
@@ -366,6 +547,72 @@ class AuthIntegrationTests {
         return authResult(result);
     }
 
+    private void completeOnboarding(AuthResult auth, String displayName, long expectedVersion) throws Exception {
+        mockMvc.perform(withCsrf(post("/api/player/profile/onboarding"))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(auth.accessToken()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"displayName":"%s","expectedVersion":%d}
+                                """.formatted(displayName, expectedVersion)))
+                .andExpect(status().isOk());
+    }
+
+    private Callable<String> onboardingRaceCall(UUID userId, CountDownLatch start, String ipAddress) {
+        return () -> {
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Concurrent onboarding test did not start");
+            }
+            try {
+                return playerProfileService.completeOnboarding(
+                        userId,
+                        new CompleteOnboardingRequest("Shared Race Hero", 0),
+                        ipAddress
+                ).onboardingStatus();
+            } catch (AuthException exception) {
+                return exception.code();
+            }
+        };
+    }
+
+    private long profileVersion(UUID userId) {
+        Long version = jdbcTemplate.queryForObject(
+                "select version from player_profiles where user_id = ?", Long.class, userId);
+        return version == null ? -1 : version;
+    }
+
+    private String profileDisplayName(UUID userId) {
+        return jdbcTemplate.queryForObject(
+                "select display_name from player_profiles where user_id = ?", String.class, userId);
+    }
+
+    private int onboardingAuditCount(UUID userId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from audit_logs
+                where actor_user_id = ? and action = 'PLAYER_ONBOARDING_COMPLETED'
+                """, Integer.class, userId);
+        return count == null ? 0 : count;
+    }
+
+    private int completedProfileCount(UUID firstUserId, UUID secondUserId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from player_profiles
+                where user_id in (?, ?) and onboarding_completed_at is not null
+                """, Integer.class, firstUserId, secondUserId);
+        return count == null ? 0 : count;
+    }
+
+    private ProfileState profileState(UUID userId) {
+        return jdbcTemplate.queryForObject("""
+                select display_name, display_name_key, onboarding_completed_at, version
+                from player_profiles where user_id = ?
+                """, (resultSet, rowNumber) -> new ProfileState(
+                        resultSet.getString("display_name"),
+                        resultSet.getString("display_name_key"),
+                        resultSet.getTimestamp("onboarding_completed_at"),
+                        resultSet.getLong("version")
+                ), userId);
+    }
+
     private String loginJson(String login) {
         return """
                 {
@@ -443,5 +690,9 @@ class AuthIntegrationTests {
     }
 
     private record CsrfMaterial(jakarta.servlet.http.Cookie cookie, String value) {
+    }
+
+    private record ProfileState(String displayName, String displayNameKey,
+                                java.sql.Timestamp onboardingCompletedAt, long version) {
     }
 }

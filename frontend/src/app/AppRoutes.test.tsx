@@ -9,9 +9,23 @@ import { AppRoutes, navigate } from './AppRoutes';
 const user = {
   id: '3d2c4040-66f6-45b7-9235-1d5d7a4d4586',
   email: 'hero@example.com',
-  username: 'hero',
   role: 'PLAYER',
   status: 'ACTIVE',
+  profile: {
+    id: 'b8953c61-67cb-44bf-ac85-0ab9d620d510',
+    displayName: 'Hero',
+    onboardingStatus: 'COMPLETED' as const,
+    version: 1,
+  },
+};
+const incompleteUser = {
+  ...user,
+  profile: {
+    ...user.profile,
+    displayName: null,
+    onboardingStatus: 'REQUIRED' as const,
+    version: 0,
+  },
 };
 const csrfCookieName = ['XSRF', 'TOKEN'].join('-');
 const csrfValue = ['csrf', 'test', 'value'].join('-');
@@ -62,6 +76,27 @@ function installSuccessfulSessionFetch() {
     fetchMock,
     counts: () => ({ refreshCount, meCount }),
   };
+}
+
+function installSessionFor(sessionUser: typeof user | typeof incompleteUser) {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/auth/csrf')) {
+      document.cookie = `${csrfCookieName}=${csrfValue}; path=/`;
+      return new Response(null, { status: 204 });
+    }
+    if (url.endsWith('/api/auth/refresh')) {
+      return jsonResponse({
+        accessToken: restoredAccess,
+        accessTokenExpiresAt: '2026-07-26T12:00:00Z',
+        user: sessionUser,
+      });
+    }
+    if (url.endsWith('/api/auth/me')) {
+      return jsonResponse(sessionUser);
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
 }
 
 describe('auth routes', () => {
@@ -210,6 +245,51 @@ describe('auth routes', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/checking your raid pass/i);
     expect(screen.queryByRole('heading', { name: /welcome back/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /enter the camp/i })).not.toBeInTheDocument();
+  });
+
+  it('never renders completed-profile content when an incomplete account opens app', async () => {
+    installSessionFor(incompleteUser);
+    const renderedText: string[] = [];
+    const observer = new MutationObserver(() => renderedText.push(document.body.textContent ?? ''));
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    let navigationCount = 0;
+    const countNavigation = () => {
+      navigationCount += 1;
+    };
+    window.addEventListener('popstate', countNavigation);
+    try {
+      renderApp('/app', true);
+      expect(await screen.findByRole('heading', { name: /choose your raid name/i })).toBeInTheDocument();
+      expect(window.location.pathname).toBe('/onboarding');
+      expect(renderedText.some((text) => /raid lobby online|welcome back/i.test(text))).toBe(false);
+      expect(navigationCount).toBe(1);
+    } finally {
+      observer.disconnect();
+      window.removeEventListener('popstate', countNavigation);
+    }
+  });
+
+  it('does not flash completed content from another completed-only route', async () => {
+    installSessionFor(incompleteUser);
+    const renderedText: string[] = [];
+    const observer = new MutationObserver(() => renderedText.push(document.body.textContent ?? ''));
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    try {
+      renderApp('/inventory');
+      expect(await screen.findByRole('heading', { name: /choose your raid name/i })).toBeInTheDocument();
+      expect(renderedText.some((text) => /raid lobby online|welcome back/i.test(text))).toBe(false);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('never renders onboarding for a completed account opening onboarding', async () => {
+    installSessionFor(user);
+    renderApp('/onboarding');
+
+    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /choose your raid name/i })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/app');
   });
 
   it('restores an OAuth success callback through refresh and me before routing to app', async () => {

@@ -385,6 +385,7 @@ class AuthUnitTests {
                 loginHistoryRepository,
                 mock(AuditLogRepository.class),
                 mock(com.game.auth.repository.UserOAuthAccountRepository.class),
+                mock(com.game.player.service.PlayerProfileService.class),
                 passwordEncoder,
                 mock(JwtService.class),
                 mock(RefreshTokenGenerator.class),

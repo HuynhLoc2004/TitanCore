@@ -1,9 +1,14 @@
 export type User = {
   id: string;
   email: string;
-  username: string;
   role: string;
   status: string;
+  profile: {
+    id: string;
+    displayName: string | null;
+    onboardingStatus: 'REQUIRED' | 'COMPLETED';
+    version: number;
+  };
 };
 
 export type AuthResponse = {
@@ -122,6 +127,13 @@ export async function logout() {
   } finally {
     setAccessToken(null);
   }
+}
+
+export async function completeProfileOnboarding(displayName: string, expectedVersion: number) {
+  return authMutation<User['profile']>('/api/player/profile/onboarding', {
+    displayName,
+    expectedVersion,
+  });
 }
 
 async function authMutation<T>(path: string, body: unknown) {

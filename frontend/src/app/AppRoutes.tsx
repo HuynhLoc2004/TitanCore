@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LoginPage } from '../auth/pages/LoginPage';
 import { OAuthCallbackPage } from '../auth/pages/OAuthCallbackPage';
 import { RegisterPage } from '../auth/pages/RegisterPage';
 import { useAuth } from '../auth/useAuth';
+import { ProfileOnboardingPage } from '../player/pages/ProfileOnboardingPage';
 
-type Route = '/login' | '/register' | '/app' | '/auth/oauth/callback';
+type Route = '/login' | '/register' | '/onboarding' | '/app' | '/auth/oauth/callback';
 
 function currentRoute(): Route {
   const path = window.location.pathname;
@@ -16,6 +17,9 @@ function currentRoute(): Route {
   }
   if (path === '/app') {
     return '/app';
+  }
+  if (path === '/onboarding') {
+    return '/onboarding';
   }
   return '/login';
 }
@@ -32,6 +36,7 @@ export function navigate(route: Route, options: { replace?: boolean } = {}) {
 export function AppRoutes() {
   const [route, setRoute] = useState<Route>(currentRoute);
   const { status, user, logout } = useAuth();
+  const redirectRef = useRef<string | null>(null);
 
   useEffect(() => {
     const listener = () => setRoute(currentRoute());
@@ -40,13 +45,27 @@ export function AppRoutes() {
   }, []);
 
   useEffect(() => {
-    if (status === 'authenticated' && route !== '/app' && route !== '/auth/oauth/callback') {
-      navigate('/app');
+    if (status === 'authenticated' && user && route !== '/auth/oauth/callback') {
+      const destination = user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app';
+      const redirectKey = `${route}:${destination}`;
+      if (route !== destination && redirectRef.current !== redirectKey) {
+        redirectRef.current = redirectKey;
+        navigate(destination, { replace: true });
+      }
     }
-    if (status === 'anonymous' && route === '/app') {
-      navigate('/login');
+    if (status === 'anonymous' && (route === '/app' || route === '/onboarding')) {
+      const redirectKey = `${route}:/login`;
+      if (redirectRef.current !== redirectKey) {
+        redirectRef.current = redirectKey;
+        navigate('/login', { replace: true });
+      }
     }
-  }, [route, status]);
+    if ((status === 'authenticated' && user
+        && route === (user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app'))
+        || (status === 'anonymous' && route !== '/app' && route !== '/onboarding')) {
+      redirectRef.current = null;
+    }
+  }, [route, status, user]);
 
   if (route === '/auth/oauth/callback') {
     return <OAuthCallbackPage />;
@@ -56,8 +75,13 @@ export function AppRoutes() {
     return <BootstrapScreen />;
   }
 
-  if (status === 'authenticated' && route !== '/app') {
-    return <RedirectingScreen />;
+  if (status === 'authenticated' && user) {
+    if (user.profile.onboardingStatus === 'REQUIRED') {
+      return route === '/onboarding' ? <ProfileOnboardingPage /> : <RedirectingScreen />;
+    }
+    if (route !== '/app') {
+      return <RedirectingScreen />;
+    }
   }
 
   if (route === '/register') {
@@ -72,7 +96,7 @@ export function AppRoutes() {
           <div className="tc-dashboard">
             <div>
               <p className="tc-eyebrow">Raid lobby online</p>
-              <h1>Welcome back, {user.username}</h1>
+              <h1>Welcome back, {user.profile.displayName}</h1>
               <p>
                 Your war banner is ready. The boss room opens in the next approved gameplay phase.
               </p>

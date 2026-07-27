@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   fetchMe,
+  completeProfileOnboarding,
   getAuthGeneration,
   invalidateAuthGeneration,
   login,
@@ -21,6 +22,7 @@ type AuthContextValue = {
   register: (email: string, username: string, password: string) => Promise<void>;
   restoreSession: () => Promise<User>;
   logout: () => Promise<void>;
+  completeOnboarding: (displayName: string, expectedVersion: number) => Promise<void>;
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -98,6 +100,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const completeOnboardingAction = useCallback(async (displayName: string, expectedVersion: number) => {
+    const generation = getAuthGeneration();
+    const profile = await completeProfileOnboarding(displayName, expectedVersion);
+    if (generation !== getAuthGeneration()) {
+      throw new Error('Stale onboarding completion');
+    }
+    setUser((current) => current ? { ...current, profile } : current);
+  }, []);
+
   const value = useMemo<AuthContextValue>(() => ({
     status,
     user,
@@ -106,7 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     register: registerAction,
     restoreSession: restoreSessionAction,
     logout: logoutAction,
-  }), [error, loginAction, logoutAction, registerAction, restoreSessionAction, status, user]);
+    completeOnboarding: completeOnboardingAction,
+  }), [completeOnboardingAction, error, loginAction, logoutAction, registerAction,
+    restoreSessionAction, status, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

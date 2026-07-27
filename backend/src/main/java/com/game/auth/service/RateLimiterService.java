@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Base64;
+import java.util.UUID;
 
 @Service
 @edu.umd.cs.findbugs.annotations.SuppressFBWarnings(
@@ -62,6 +63,11 @@ public class RateLimiterService {
 
     public void checkRefresh(String ipAddress, String sessionKey) {
         check("refresh", ipAddress + ":" + sessionKey, authProperties.rateLimit().refreshLimit());
+    }
+
+    public void checkProfileOnboarding(String ipAddress, UUID userId) {
+        check("profile-onboarding:ip", ipAddress, authProperties.rateLimit().refreshLimit());
+        check("profile-onboarding:user", userId.toString(), authProperties.rateLimit().refreshLimit());
     }
 
     private void check(String bucket, String value, int limit) {

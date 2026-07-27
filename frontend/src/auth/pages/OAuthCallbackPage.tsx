@@ -56,12 +56,12 @@ export function OAuthCallbackPage() {
 
     restorePromiseRef.current ??= restoreSession();
     restorePromiseRef.current
-      .then(() => {
+      .then((user) => {
         if (!active || navigatedRef.current) {
           return;
         }
         navigatedRef.current = true;
-        navigate('/app', { replace: true });
+        navigate(user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app', { replace: true });
       })
       .catch(() => {
         if (!active) {
