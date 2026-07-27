@@ -62,6 +62,19 @@ springdoc:
     enabled: ${SWAGGER_ENABLED:true}
 
 app:
+  asset-storage:
+    enabled: ${OBJECT_STORAGE_ENABLED:false}
+    endpoint: ${OBJECT_STORAGE_ENDPOINT:http://localhost:9000}
+    region: ${OBJECT_STORAGE_REGION:us-east-1}
+    private-bucket: ${OBJECT_STORAGE_PRIVATE_BUCKET:titancore-private}
+    public-bucket: ${OBJECT_STORAGE_PUBLIC_BUCKET:titancore-published}
+    access-key: ${OBJECT_STORAGE_ACCESS_KEY:}
+    secret-key: ${OBJECT_STORAGE_SECRET_KEY:}
+    path-style: ${OBJECT_STORAGE_PATH_STYLE:true}
+    public-base-url: ${ASSET_PUBLIC_BASE_URL:http://localhost:9000/titancore-published}
+    connect-timeout: ${OBJECT_STORAGE_CONNECT_TIMEOUT:2s}
+    read-timeout: ${OBJECT_STORAGE_READ_TIMEOUT:5s}
+    presign-ttl: ${OBJECT_STORAGE_PRESIGN_TTL:5m}
   auth:
     jwt:
       issuer: ${JWT_ISSUER:multiplayer-game}

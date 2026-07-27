@@ -17,6 +17,16 @@ springdoc:
     enabled: ${SWAGGER_ENABLED:false}
 
 app:
+  asset-storage:
+    enabled: true
+    endpoint: ${OBJECT_STORAGE_ENDPOINT}
+    region: ${OBJECT_STORAGE_REGION}
+    private-bucket: ${OBJECT_STORAGE_PRIVATE_BUCKET}
+    public-bucket: ${OBJECT_STORAGE_PUBLIC_BUCKET}
+    access-key: ${OBJECT_STORAGE_ACCESS_KEY}
+    secret-key: ${OBJECT_STORAGE_SECRET_KEY}
+    path-style: ${OBJECT_STORAGE_PATH_STYLE:false}
+    public-base-url: ${ASSET_PUBLIC_BASE_URL}
   auth:
     cookie:
       secure: ${AUTH_COOKIE_SECURE:true}
