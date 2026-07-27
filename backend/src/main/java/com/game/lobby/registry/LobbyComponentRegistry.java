@@ -100,9 +100,11 @@ public class LobbyComponentRegistry {
                 .mapToInt(section -> section.assets().size())
                 .sum();
         require(assetCount <= MAX_ASSETS);
+        assertInvariant(navigation.size() <= MAX_NAVIGATION);
+        assertInvariant(sections.size() <= MAX_SECTIONS);
         return new MappedLobbyContent(
-                List.copyOf(navigation.stream().limit(MAX_NAVIGATION).toList()),
-                List.copyOf(sections.stream().limit(MAX_SECTIONS).toList()),
+                List.copyOf(navigation),
+                List.copyOf(sections),
                 degraded.stream().map(Enum::name).sorted().toList()
         );
     }
@@ -350,6 +352,12 @@ public class LobbyComponentRegistry {
     private void require(boolean condition) {
         if (!condition) {
             throw invalid();
+        }
+    }
+
+    private void assertInvariant(boolean condition) {
+        if (!condition) {
+            throw new LobbyContentIntegrityException();
         }
     }
 

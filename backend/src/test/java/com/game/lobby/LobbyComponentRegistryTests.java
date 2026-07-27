@@ -1,12 +1,14 @@
 package com.game.lobby;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.game.lobby.dto.LobbyBootstrapResponse;
 import com.game.lobby.dto.LobbySectionResponse;
 import com.game.lobby.model.ResolvedLobbyContent;
 import com.game.lobby.registry.LobbyComponentRegistry;
+import com.game.lobby.registry.LobbyContentIntegrityException;
 import com.game.lobby.service.LobbyEtagBuilder;
 import com.game.lobby.service.LobbyLocaleResolver;
 import org.junit.jupiter.api.Test;
@@ -187,6 +189,47 @@ class LobbyComponentRegistryTests {
         assertThat(mapped.sections()).isEmpty();
         assertThat(mapped.degradedCodes())
                 .containsExactly("INVALID_CONTENT", "MISSING_ASSET");
+    }
+
+    @Test
+    void rejectsNavigationOverflowInsteadOfSilentlyTruncating() throws Exception {
+        var first = publication("NAVIGATION", "lobby.navigation", """
+                {"items":[
+                  {"key":"n1","label":"One","iconKey":"HOME","target":"LOBBY","order":1,"visible":true},
+                  {"key":"n2","label":"Two","iconKey":"HOME","target":"LOBBY","order":2,"visible":true},
+                  {"key":"n3","label":"Three","iconKey":"HOME","target":"LOBBY","order":3,"visible":true},
+                  {"key":"n4","label":"Four","iconKey":"HOME","target":"LOBBY","order":4,"visible":true}
+                ]}
+                """);
+        var second = publication("NAVIGATION", "lobby.navigation", """
+                {"items":[
+                  {"key":"n5","label":"Five","iconKey":"HOME","target":"LOBBY","order":5,"visible":true},
+                  {"key":"n6","label":"Six","iconKey":"HOME","target":"LOBBY","order":6,"visible":true},
+                  {"key":"n7","label":"Seven","iconKey":"HOME","target":"LOBBY","order":7,"visible":true},
+                  {"key":"n8","label":"Eight","iconKey":"HOME","target":"LOBBY","order":8,"visible":true}
+                ]}
+                """);
+
+        assertThatThrownBy(() -> registry.map(List.of(first, second), Map.of()))
+                .isInstanceOf(LobbyContentIntegrityException.class);
+    }
+
+    @Test
+    void rejectsSectionOverflowInsteadOfSilentlyTruncating() throws Exception {
+        List<ResolvedLobbyContent.ResolvedPublication> duplicates =
+                new java.util.ArrayList<>();
+        for (int index = 0; index < 8; index++) {
+            duplicates.add(publication(
+                    "PAGE_SECTION",
+                    "lobby.player-summary",
+                    ("{\"key\":\"player-%d\",\"title\":\"Player\","
+                            + "\"order\":%d,\"visible\":true}")
+                            .formatted(index, index)
+            ));
+        }
+
+        assertThatThrownBy(() -> registry.map(duplicates, Map.of()))
+                .isInstanceOf(LobbyContentIntegrityException.class);
     }
 
     private ResolvedLobbyContent.ResolvedPublication publication(

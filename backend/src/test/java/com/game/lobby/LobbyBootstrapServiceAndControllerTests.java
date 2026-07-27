@@ -13,10 +13,13 @@ import com.game.auth.security.AuthenticatedUser;
 import com.game.lobby.controller.LobbyBootstrapController;
 import com.game.lobby.dto.LobbyBootstrapResponse;
 import com.game.lobby.model.ResolvedLobbyContent;
+import com.game.lobby.dto.LobbySectionResponse;
+import com.game.lobby.registry.LobbyContentIntegrityException;
 import com.game.lobby.registry.LobbyComponentRegistry;
 import com.game.lobby.repository.LobbyContentReadRepository;
 import com.game.lobby.service.LobbyBootstrapException;
 import com.game.lobby.service.LobbyBootstrapService;
+import com.game.lobby.service.LobbyContentQueryService;
 import com.game.lobby.service.LobbyEtagBuilder;
 import com.game.lobby.service.LobbyLocaleResolver;
 import com.game.player.service.PlayerProfileService;
@@ -60,6 +63,7 @@ class LobbyBootstrapServiceAndControllerTests {
         assertThat(json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length)
                 .isLessThanOrEqualTo(LobbyBootstrapService.MAX_RESPONSE_BYTES);
         verify(fixture.repository()).resolve("vi-VN");
+        verify(fixture.repository()).applyTransactionLocalTimeout();
         verify(fixture.repository()).findAssets(List.of());
     }
 
@@ -102,7 +106,10 @@ class LobbyBootstrapServiceAndControllerTests {
         Fixture fixture = fixture(new ProfileIdentityResponse(
                 UUID.randomUUID(), "Titan", "COMPLETED", 2));
         when(fixture.repository().resolve("en-US"))
-                .thenThrow(new QueryTimeoutException("bounded timeout"));
+                .thenThrow(new QueryTimeoutException(
+                        "bounded timeout",
+                        new SQLException("cancelled", "57014")
+                ));
 
         LobbyBootstrapService.BootstrapResult result =
                 fixture.service().bootstrap(UUID.randomUUID(), "en-US");
@@ -135,6 +142,77 @@ class LobbyBootstrapServiceAndControllerTests {
     }
 
     @Test
+    void registryInvariantFailureReturnsSafeServiceProblemNotTransientDegradation() {
+        PlayerProfileService profileService = mock(PlayerProfileService.class);
+        when(profileService.identity(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ProfileIdentityResponse(
+                        UUID.randomUUID(), "Titan", "COMPLETED", 2
+                ));
+        LobbyContentQueryService queryService = mock(LobbyContentQueryService.class);
+        when(queryService.read("vi-VN"))
+                .thenThrow(new LobbyContentIntegrityException());
+        LobbyBootstrapService service = new LobbyBootstrapService(
+                profileService,
+                queryService,
+                new LobbyEtagBuilder(OBJECT_MAPPER),
+                OBJECT_MAPPER,
+                Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+
+        assertThatThrownBy(() -> service.bootstrap(UUID.randomUUID(), "vi-VN"))
+                .isInstanceOf(LobbyBootstrapException.class)
+                .extracting("status", "code")
+                .containsExactly(
+                        org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                        "LOBBY_CONTENT_INTEGRITY_FAILURE"
+                );
+    }
+
+    @Test
+    void serializedSafetyBoundRejectsOversizeResponseWithoutTruncation() {
+        PlayerProfileService profileService = mock(PlayerProfileService.class);
+        when(profileService.identity(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ProfileIdentityResponse(
+                        UUID.randomUUID(), "Titan", "COMPLETED", 2
+                ));
+        LobbyContentQueryService queryService = mock(LobbyContentQueryService.class);
+        LobbySectionResponse oversize = new LobbySectionResponse.EventSpotlight(
+                "event",
+                "EVENT_SPOTLIGHT",
+                1,
+                "Event",
+                "x".repeat(LobbyBootstrapService.MAX_RESPONSE_BYTES),
+                "INFO",
+                new LobbySectionResponse.ContentRef(
+                        UUID.randomUUID().toString(),
+                        UUID.randomUUID().toString(),
+                        1,
+                        "a".repeat(64)
+                ),
+                List.of()
+        );
+        when(queryService.read("vi-VN")).thenReturn(
+                new LobbyContentQueryService.ContentResult(
+                        new ResolvedLobbyContent(NOW, null, false, List.of()),
+                        new LobbyComponentRegistry.MappedLobbyContent(
+                                List.of(), List.of(oversize), List.of()
+                        )
+                )
+        );
+        LobbyBootstrapService service = new LobbyBootstrapService(
+                profileService,
+                queryService,
+                new LobbyEtagBuilder(OBJECT_MAPPER),
+                OBJECT_MAPPER,
+                Clock.fixed(NOW, ZoneOffset.UTC)
+        );
+
+        assertThatThrownBy(() -> service.bootstrap(UUID.randomUUID(), "vi-VN"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Lobby bootstrap response exceeded bound");
+    }
+
+    @Test
     void controllerReturnsPrivateHeadersAndBodylessMatchingWeakEtag() {
         LobbyBootstrapService service = mock(LobbyBootstrapService.class);
         LobbyLocaleResolver resolver = new LobbyLocaleResolver();
@@ -163,8 +241,6 @@ class LobbyBootstrapServiceAndControllerTests {
                 .isEqualTo("vi-VN");
         assertThat(ok.getHeaders().getCacheControl())
                 .isEqualTo("private, no-cache, must-revalidate");
-        assertThat(ok.getHeaders().getFirst(HttpHeaders.VARY))
-                .isEqualTo("Authorization, Accept-Language, Origin");
         assertThat(notModified.getStatusCode().value()).isEqualTo(304);
         assertThat(notModified.getBody()).isNull();
         assertThat(notModified.getHeaders().getETag()).isEqualTo(result.etag());
@@ -198,6 +274,23 @@ class LobbyBootstrapServiceAndControllerTests {
         assertThat(response.getBody()).isEqualTo(body);
     }
 
+    @Test
+    void localeResolverHonorsWeightsAndFallsBackSafely() {
+        LobbyLocaleResolver resolver = new LobbyLocaleResolver();
+
+        assertThat(resolver.resolve("vi-VN;q=1, en-US;q=0")).isEqualTo("vi-VN");
+        assertThat(resolver.resolve("en-US;q=0.9, vi-VN;q=1")).isEqualTo("vi-VN");
+        assertThat(resolver.resolve("EN-us")).isEqualTo("en-US");
+        assertThat(resolver.resolve("en-US,en-US;q=0.5")).isEqualTo("en-US");
+        assertThat(resolver.resolve("*")).isEqualTo("vi-VN");
+        assertThat(resolver.resolve("fr-FR")).isEqualTo("vi-VN");
+        assertThat(resolver.resolve("vi-VN;q=0,en-US;q=0")).isEqualTo("vi-VN");
+        assertThat(resolver.resolve("en-US;q=broken")).isEqualTo("vi-VN");
+        assertThat(resolver.resolve("en-US," + "x-private,".repeat(20)))
+                .isEqualTo("vi-VN");
+        assertThat(resolver.resolve("x".repeat(513))).isEqualTo("vi-VN");
+    }
+
     private Fixture fixture(ProfileIdentityResponse profile) {
         PlayerProfileService profileService = mock(PlayerProfileService.class);
         LobbyContentReadRepository repository = mock(LobbyContentReadRepository.class);
@@ -214,8 +307,10 @@ class LobbyBootstrapServiceAndControllerTests {
     ) {
         return new LobbyBootstrapService(
                 profileService,
-                repository,
-                new LobbyComponentRegistry(OBJECT_MAPPER),
+                new LobbyContentQueryService(
+                        repository,
+                        new LobbyComponentRegistry(OBJECT_MAPPER)
+                ),
                 new LobbyEtagBuilder(OBJECT_MAPPER),
                 OBJECT_MAPPER,
                 Clock.fixed(NOW, ZoneOffset.UTC)

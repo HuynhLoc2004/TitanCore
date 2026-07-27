@@ -3,17 +3,42 @@ package com.game.lobby;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.game.auth.dto.ProfileIdentityResponse;
 import com.game.lobby.model.ResolvedLobbyContent;
+import com.game.lobby.registry.LobbyComponentRegistry;
 import com.game.lobby.repository.LobbyContentReadRepository;
+import com.game.lobby.service.LobbyBootstrapService;
+import com.game.lobby.service.LobbyContentQueryService;
+import com.game.lobby.service.LobbyEtagBuilder;
+import com.game.player.service.PlayerProfileService;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.AbstractDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -21,8 +46,16 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import javax.sql.DataSource;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @Testcontainers
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class LobbyContentReadRepositoryIntegrationTests {
 
     @Container
@@ -31,16 +64,19 @@ class LobbyContentReadRepositoryIntegrationTests {
 
     private static JdbcTemplate jdbc;
     private static LobbyContentReadRepository repository;
+    private static LobbyContentQueryService contentQueryService;
+    private static CountingDataSource countingDataSource;
+    private static HikariDataSource hikariDataSource;
+    private static DataSourceTransactionManager transactionManager;
 
     @BeforeAll
     static void migrate() {
-        DriverManagerDataSource dataSource = new DriverManagerDataSource(
-                POSTGRES.getJdbcUrl(),
-                POSTGRES.getUsername(),
-                POSTGRES.getPassword()
-        );
         Flyway flyway = Flyway.configure()
-                .dataSource(dataSource)
+                .dataSource(
+                        POSTGRES.getJdbcUrl(),
+                        POSTGRES.getUsername(),
+                        POSTGRES.getPassword()
+                )
                 .locations("classpath:db/migration")
                 .placeholders(Map.of(
                         "runtimeRole", POSTGRES.getUsername(),
@@ -52,11 +88,77 @@ class LobbyContentReadRepositoryIntegrationTests {
                 .load();
         flyway.migrate();
         flyway.validate();
-        jdbc = new JdbcTemplate(dataSource);
+
+        HikariConfig hikariConfig = new HikariConfig();
+        hikariConfig.setJdbcUrl(POSTGRES.getJdbcUrl());
+        hikariConfig.setUsername(POSTGRES.getUsername());
+        hikariConfig.setPassword(POSTGRES.getPassword());
+        hikariConfig.setMaximumPoolSize(1);
+        hikariConfig.setMinimumIdle(1);
+        hikariDataSource = new HikariDataSource(hikariConfig);
+        countingDataSource = new CountingDataSource(hikariDataSource);
+        jdbc = new JdbcTemplate(countingDataSource);
         repository = new LobbyContentReadRepository(
                 jdbc,
                 new ObjectMapper().findAndRegisterModules()
         );
+        transactionManager = new DataSourceTransactionManager(countingDataSource);
+        LobbyContentQueryService target = new LobbyContentQueryService(
+                repository,
+                new LobbyComponentRegistry(new ObjectMapper().findAndRegisterModules())
+        );
+        ProxyFactory proxyFactory = new ProxyFactory(target);
+        proxyFactory.setProxyTargetClass(true);
+        proxyFactory.addAdvice(new TransactionInterceptor(
+                transactionManager,
+                new AnnotationTransactionAttributeSource()
+        ));
+        contentQueryService = (LobbyContentQueryService) proxyFactory.getProxy();
+    }
+
+    @AfterAll
+    static void closePool() {
+        hikariDataSource.close();
+    }
+
+    @Test
+    @Order(1)
+    void provesBoundedStatementCountsForEmptyMaximumFallbackAndMalformedContent() {
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.executeWithoutResult(status -> {
+            countingDataSource.reset();
+            var empty = contentQueryService.read("vi-VN");
+            assertThat(empty.resolved().publications()).isEmpty();
+            assertThat(countingDataSource.statementCount()).isEqualTo(2);
+
+            OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+            seedAllTuples(now);
+            countingDataSource.reset();
+            var maximum = contentQueryService.read("vi-VN");
+            assertThat(maximum.resolved().publications()).hasSize(8);
+            assertThat(countingDataSource.statementCount()).isEqualTo(3);
+
+            countingDataSource.reset();
+            var fallback = contentQueryService.read("en-US");
+            assertThat(fallback.resolved().publications()).hasSize(8);
+            assertThat(countingDataSource.statementCount()).isEqualTo(3);
+
+            UUID malformed = version(
+                    entry("lobby.player.malformed." + UUID.randomUUID(), "PAGE_SECTION"),
+                    1,
+                    """
+                    {"key":"player","title":"Malformed","order":1,"visible":true,
+                     "unexpected":"rejected-by-typed-registry"}
+                    """
+            );
+            publication(malformed, null, "lobby.player-summary", "en-US",
+                    "ONBOARDING_COMPLETE", now.minusSeconds(1), null);
+            countingDataSource.reset();
+            var degraded = contentQueryService.read("en-US");
+            assertThat(degraded.mapped().degradedCodes()).contains("INVALID_CONTENT");
+            assertThat(countingDataSource.statementCount()).isEqualTo(3);
+            status.setRollbackOnly();
+        });
     }
 
     @Test
@@ -212,7 +314,137 @@ class LobbyContentReadRepositoryIntegrationTests {
     }
 
     @Test
-    void measuresWarmBoundedRepositoryBaselineWithoutFlakyLatencyGate() {
+    void resolvesExactHalfOpenBoundariesUsingOneDatabaseTransactionTimestamp() {
+        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+        transaction.executeWithoutResult(status -> {
+            OffsetDateTime databaseNow = jdbc.queryForObject(
+                    "select transaction_timestamp()",
+                    OffsetDateTime.class
+            );
+            UUID startsExactlyNow = version(
+                    entry("lobby.boundary.start." + UUID.randomUUID(), "BANNER"),
+                    1,
+                    """
+                    {"key":"start","title":"Starts now","copy":"Boundary",
+                     "tone":"INFO","presentationVariant":"WIDE",
+                     "order":1,"visible":true}
+                    """
+            );
+            publication(
+                    startsExactlyNow, null, "lobby.hero", "en-US",
+                    "ONBOARDING_COMPLETE", databaseNow, null
+            );
+            UUID endsExactlyNow = version(
+                    entry("lobby.boundary.end." + UUID.randomUUID(), "EVENT"),
+                    1,
+                    """
+                    {"key":"end","title":"Ends now","copy":"Boundary",
+                     "tone":"INFO","order":2,"visible":true}
+                    """
+            );
+            publication(
+                    endsExactlyNow, null, "lobby.event-spotlight", "en-US",
+                    "ONBOARDING_COMPLETE", databaseNow.minusMinutes(1), databaseNow
+            );
+
+            repository.applyTransactionLocalTimeout();
+            ResolvedLobbyContent resolved = repository.resolve("en-US");
+
+            assertThat(resolved.databaseTime()).isEqualTo(databaseNow.toInstant());
+            assertThat(resolved.publications())
+                    .extracting(ResolvedLobbyContent.ResolvedPublication::contentVersionId)
+                    .contains(startsExactlyNow)
+                    .doesNotContain(endsExactlyNow);
+            status.setRollbackOnly();
+        });
+    }
+
+    @Test
+    void cancelsAtPostgresTimeoutRollsBackAndReusesPoolConnectionSafely()
+            throws Exception {
+        PlayerProfileService profileService = mock(PlayerProfileService.class);
+        when(profileService.identity(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new ProfileIdentityResponse(
+                        UUID.randomUUID(), "Timeout Titan", "COMPLETED", 1
+                ));
+        ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+        LobbyBootstrapService bootstrapService = new LobbyBootstrapService(
+                profileService,
+                contentQueryService,
+                new LobbyEtagBuilder(objectMapper),
+                objectMapper,
+                Clock.systemUTC()
+        );
+        assertThat(contentQueryService.read("vi-VN").resolved()).isNotNull();
+
+        try (Connection lockConnection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             Statement lockStatement = lockConnection.createStatement()) {
+            lockConnection.setAutoCommit(false);
+            lockStatement.execute(
+                    "lock table content_publications in access exclusive mode"
+            );
+
+            long queryStarted = System.nanoTime();
+            Throwable cancellation = org.assertj.core.api.Assertions.catchThrowable(
+                    () -> contentQueryService.read("vi-VN")
+            );
+            long queryMillis = (System.nanoTime() - queryStarted) / 1_000_000;
+            assertThat(cancellation).isNotNull();
+            assertThat(sqlState(cancellation)).isEqualTo("57014");
+            assertThat(queryMillis).isBetween(150L, 800L);
+
+            long bootstrapStarted = System.nanoTime();
+            LobbyBootstrapService.BootstrapResult degraded =
+                    bootstrapService.bootstrap(UUID.randomUUID(), "vi-VN");
+            long bootstrapMillis = (System.nanoTime() - bootstrapStarted) / 1_000_000;
+            assertThat(bootstrapMillis).isBetween(150L, 800L);
+            assertThat(degraded.noStore()).isTrue();
+            assertThat(degraded.response().degraded().codes())
+                    .containsExactly("CONTENT_UNAVAILABLE");
+            System.out.printf(
+                    "lobby-postgresql-timeout directMs=%d degradedBootstrapMs=%d "
+                            + "sqlState=57014%n",
+                    queryMillis,
+                    bootstrapMillis
+            );
+
+            lockConnection.rollback();
+        }
+
+        var recovered = contentQueryService.read("vi-VN");
+        assertThat(recovered.resolved()).isNotNull();
+        assertThat(jdbc.queryForObject(
+                "show statement_timeout",
+                String.class
+        )).isEqualTo("0");
+    }
+
+    @Test
+    void excludesDraftDependenciesThroughTheLobbyRepository() {
+        UUID draftVersion = version(
+                entry("lobby.draft.asset." + UUID.randomUUID(), "PAGE_SECTION"),
+                1,
+                """
+                {"key":"character","title":"Draft","order":1,"visible":true}
+                """
+        );
+        UUID draftAsset = imageAsset();
+        UUID draftVariant = imageVariant(draftAsset);
+        bind(draftVersion, draftAsset, draftVariant);
+
+        assertThat(repository.findAssets(List.of(draftVersion))).isEmpty();
+    }
+
+    @Test
+    void refusesTransactionLocalTimeoutConfigurationOutsideATransaction() {
+        assertThatThrownBy(repository::applyTransactionLocalTimeout)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Lobby statement timeout requires an active transaction");
+    }
+
+    @Test
+    void reportsRepositoryOnlySequentialWarmSingleContainerBaseline() {
         for (int warmup = 0; warmup < 5; warmup++) {
             resolveWithAssets();
         }
@@ -228,7 +460,9 @@ class LobbyContentReadRepositoryIntegrationTests {
         long p95Micros = elapsedMicros.get(28);
 
         System.out.printf(
-                "lobby-content-baseline samples=30 p50Ms=%.3f p95Ms=%.3f%n",
+                "lobby-repository-only sequential warm single-container "
+                        + "samples=30 p50Ms=%.3f p95Ms=%.3f "
+                        + "(excludes auth/profile/http/json/concurrency)%n",
                 p50Micros / 1_000.0,
                 p95Micros / 1_000.0
         );
@@ -243,6 +477,68 @@ class LobbyContentReadRepositoryIntegrationTests {
         );
         assertThat(assets).hasSizeLessThanOrEqualTo(25);
         return resolved;
+    }
+
+    private static void seedAllTuples(OffsetDateTime now) {
+        publishSeed("NAVIGATION", "lobby.navigation", """
+                {"items":[{"key":"home","label":"Lobby","iconKey":"HOME",
+                 "target":"LOBBY","order":1,"visible":true}]}
+                """, now);
+        publishSeed("BANNER", "lobby.hero", """
+                {"key":"hero","title":"Hero","copy":"Copy","tone":"INFO",
+                 "presentationVariant":"WIDE","order":1,"visible":true}
+                """, now);
+        publishSeed("ANNOUNCEMENT", "lobby.announcements", """
+                {"key":"news","order":2,"visible":true,
+                 "items":[{"key":"one","copy":"News","tone":"INFO","order":1}]}
+                """, now);
+        publishSeed("PAGE_SECTION", "lobby.boss-rooms", """
+                {"key":"bosses","title":"Bosses","order":3,"visible":true,
+                 "bosses":[]}
+                """, now);
+        publishSeed("PAGE_SECTION", "lobby.player-summary", """
+                {"key":"player","title":"Player","order":4,"visible":true}
+                """, now);
+        publishSeed("PAGE_SECTION", "lobby.character-preview", """
+                {"key":"character","title":"Character","order":5,"visible":true}
+                """, now);
+        publishSeed("PAGE_SECTION", "lobby.inventory-preview", """
+                {"key":"inventory","title":"Inventory","emptyCopy":"Empty",
+                 "maxItems":6,"order":6,"visible":true}
+                """, now);
+        publishSeed("EVENT", "lobby.event-spotlight", """
+                {"key":"event","title":"Event","copy":"Event copy","tone":"INFO",
+                 "order":7,"visible":true}
+                """, now);
+    }
+
+    private static void publishSeed(
+            String contentType,
+            String slot,
+            String payload,
+            OffsetDateTime now
+    ) {
+        UUID contentVersion = version(
+                entry("seed." + UUID.randomUUID(), contentType),
+                1,
+                payload
+        );
+        publication(
+                contentVersion, null, slot, "vi-VN", "ONBOARDING_COMPLETE",
+                now.minusMinutes(1), null
+        );
+    }
+
+    private static String sqlState(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLException sqlException
+                    && sqlException.getSQLState() != null) {
+                return sqlException.getSQLState();
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     private static UUID entry(String code, String contentType) {
@@ -334,5 +630,55 @@ class LobbyContentReadRepositoryIntegrationTests {
                     updated_at = now()
                 where id = ?
                 """, reviewer, assetId);
+    }
+
+    private static final class CountingDataSource extends AbstractDataSource {
+
+        private final DataSource delegate;
+        private final AtomicInteger statements = new AtomicInteger();
+
+        private CountingDataSource(DataSource delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            return wrap(delegate.getConnection());
+        }
+
+        @Override
+        public Connection getConnection(String username, String password)
+                throws SQLException {
+            return wrap(delegate.getConnection(username, password));
+        }
+
+        private Connection wrap(Connection connection) {
+            return (Connection) Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class},
+                    (proxy, method, arguments) -> {
+                        try {
+                            Object result = method.invoke(connection, arguments);
+                            if (("prepareStatement".equals(method.getName())
+                                    && result instanceof PreparedStatement)
+                                    || ("createStatement".equals(method.getName())
+                                    && result instanceof Statement)) {
+                                statements.incrementAndGet();
+                            }
+                            return result;
+                        } catch (InvocationTargetException exception) {
+                            throw exception.getCause();
+                        }
+                    }
+            );
+        }
+
+        private void reset() {
+            statements.set(0);
+        }
+
+        private int statementCount() {
+            return statements.get();
+        }
     }
 }

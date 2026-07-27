@@ -141,25 +141,21 @@ class AuthIntegrationTests {
                         HttpHeaders.CACHE_CONTROL,
                         "private, no-cache, must-revalidate"
                 ))
-                .andExpect(header().string(
-                        HttpHeaders.VARY,
-                        "Authorization, Accept-Language, Origin"
-                ))
                 .andReturn();
+        assertVaryContains(completed, "Authorization", "Accept-Language", "Origin");
         assertThat(completed.getResponse().getContentAsString())
                 .contains("Lobby Titan")
                 .doesNotContain("lobbyinternal", "lobby-user@example.com", "object_key");
 
         String etag = Objects.requireNonNull(
                 completed.getResponse().getHeader(HttpHeaders.ETAG));
-        mockMvc.perform(request.header(HttpHeaders.IF_NONE_MATCH, etag))
+        MvcResult notModified = mockMvc.perform(
+                        request.header(HttpHeaders.IF_NONE_MATCH, etag))
                 .andExpect(status().isNotModified())
                 .andExpect(header().string(HttpHeaders.ETAG, etag))
-                .andExpect(header().string(
-                        HttpHeaders.VARY,
-                        "Authorization, Accept-Language, Origin"
-                ))
-                .andExpect(content().string(""));
+                .andExpect(content().string(""))
+                .andReturn();
+        assertVaryContains(notModified, "Authorization", "Accept-Language", "Origin");
     }
 
     @Test
@@ -638,6 +634,19 @@ class AuthIntegrationTests {
                 .andExpect(status().isOk())
                 .andReturn();
         return authResult(result);
+    }
+
+    private void assertVaryContains(MvcResult result, String... expected) {
+        java.util.Set<String> tokens = result.getResponse()
+                .getHeaders(HttpHeaders.VARY)
+                .stream()
+                .flatMap(value -> java.util.Arrays.stream(value.split(",")))
+                .map(String::strip)
+                .map(value -> value.toLowerCase(java.util.Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        for (String varyToken : expected) {
+            assertThat(tokens).contains(varyToken.toLowerCase(java.util.Locale.ROOT));
+        }
     }
 
     private AuthResult login(String login) throws Exception {

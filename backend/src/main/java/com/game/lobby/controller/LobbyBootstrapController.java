@@ -19,9 +19,6 @@ public class LobbyBootstrapController {
 
     private static final String PRIVATE_REVALIDATE =
             "private, no-cache, must-revalidate";
-    private static final String VARY_VALUE =
-            "Authorization, Accept-Language, Origin";
-
     private final LobbyBootstrapService lobbyBootstrapService;
     private final LobbyLocaleResolver localeResolver;
 
@@ -58,7 +55,6 @@ public class LobbyBootstrapController {
         HttpHeaders headers = new HttpHeaders();
         headers.setETag(result.etag());
         headers.set(HttpHeaders.CONTENT_LANGUAGE, locale);
-        headers.set(HttpHeaders.VARY, VARY_VALUE);
         headers.set(HttpHeaders.CACHE_CONTROL,
                 result.noStore() ? "no-store" : PRIVATE_REVALIDATE);
         return headers;

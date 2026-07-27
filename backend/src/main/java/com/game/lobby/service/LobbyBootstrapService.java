@@ -6,20 +6,18 @@ import com.game.auth.dto.ProfileIdentityResponse;
 import com.game.auth.service.AuthException;
 import com.game.lobby.dto.LobbyBootstrapResponse;
 import com.game.lobby.model.ResolvedLobbyContent;
+import com.game.lobby.registry.LobbyContentIntegrityException;
 import com.game.lobby.registry.LobbyComponentRegistry;
-import com.game.lobby.repository.LobbyContentReadRepository;
 import com.game.player.service.PlayerProfileService;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLException;
 import java.time.Clock;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 @edu.umd.cs.findbugs.annotations.SuppressFBWarnings(
@@ -31,29 +29,25 @@ public class LobbyBootstrapService {
     public static final int MAX_RESPONSE_BYTES = 96 * 1024;
 
     private final PlayerProfileService playerProfileService;
-    private final LobbyContentReadRepository contentRepository;
-    private final LobbyComponentRegistry componentRegistry;
+    private final LobbyContentQueryService contentQueryService;
     private final LobbyEtagBuilder etagBuilder;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
     public LobbyBootstrapService(
             PlayerProfileService playerProfileService,
-            LobbyContentReadRepository contentRepository,
-            LobbyComponentRegistry componentRegistry,
+            LobbyContentQueryService contentQueryService,
             LobbyEtagBuilder etagBuilder,
             ObjectMapper objectMapper,
             Clock clock
     ) {
         this.playerProfileService = playerProfileService;
-        this.contentRepository = contentRepository;
-        this.componentRegistry = componentRegistry;
+        this.contentQueryService = contentQueryService;
         this.etagBuilder = etagBuilder;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
 
-    @Transactional(readOnly = true, timeout = 1)
     public BootstrapResult bootstrap(UUID userId, String locale) {
         ProfileIdentityResponse profile = publicProfile(userId);
         if (!"COMPLETED".equals(profile.onboardingStatus())
@@ -69,21 +63,20 @@ public class LobbyBootstrapService {
         LobbyComponentRegistry.MappedLobbyContent mapped;
         boolean noStore = false;
         try {
-            resolved = contentRepository.resolve(locale);
-            List<UUID> versionIds = resolved.publications().stream()
-                    .map(ResolvedLobbyContent.ResolvedPublication::contentVersionId)
-                    .toList();
-            Map<UUID, List<ResolvedLobbyContent.ResolvedAsset>> assetsByVersion =
-                    contentRepository.findAssets(versionIds).stream()
-                            .collect(Collectors.groupingBy(
-                                    ResolvedLobbyContent.ResolvedAsset::contentVersionId
-                            ));
-            mapped = componentRegistry.map(resolved.publications(), assetsByVersion);
-            if (resolved.unknownContentPresent()) {
-                mapped = mapped.withDegradedCode("UNKNOWN_CONTENT_SCHEMA");
+            LobbyContentQueryService.ContentResult content =
+                    contentQueryService.read(locale);
+            resolved = content.resolved();
+            mapped = content.mapped();
+        } catch (LobbyContentIntegrityException exception) {
+            throw new LobbyBootstrapException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "LOBBY_CONTENT_INTEGRITY_FAILURE",
+                    "Lobby content is temporarily unavailable"
+            );
+        } catch (RuntimeException exception) {
+            if (!hasSqlState(exception, "57014")) {
+                throw exception;
             }
-        } catch (QueryTimeoutException
-                 | DataAccessResourceFailureException exception) {
             resolved = new ResolvedLobbyContent(
                     clock.instant(), null, false, List.of());
             mapped = new LobbyComponentRegistry.MappedLobbyContent(
@@ -107,6 +100,18 @@ public class LobbyBootstrapService {
         );
         enforceSerializedBound(response);
         return new BootstrapResult(response, etagBuilder.build(response), noStore);
+    }
+
+    private boolean hasSqlState(Throwable throwable, String expectedSqlState) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof SQLException sqlException
+                    && expectedSqlState.equals(sqlException.getSQLState())) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private ProfileIdentityResponse publicProfile(UUID userId) {

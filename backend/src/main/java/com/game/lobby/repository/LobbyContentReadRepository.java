@@ -9,6 +9,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -34,12 +35,8 @@ public class LobbyContentReadRepository {
             with allowed(content_type, slot_key, schema_version) as (
                 values {{ALLOWED_VALUES}}
             ),
-            timeout_config as materialized (
-                select set_config('statement_timeout', '300ms', true)
-            ),
             clock as (
                 select transaction_timestamp() as database_time
-                from timeout_config
             ),
             relevant as (
                 select effective.id as publication_id,
@@ -185,6 +182,18 @@ public class LobbyContentReadRepository {
                 metadata.nextBoundaryAt(),
                 metadata.unknownContentPresent(),
                 publications
+        );
+    }
+
+    public void applyTransactionLocalTimeout() {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException(
+                    "Lobby statement timeout requires an active transaction"
+            );
+        }
+        jdbcTemplate.queryForObject(
+                "select set_config('statement_timeout', '300ms', true)",
+                String.class
         );
     }
 
