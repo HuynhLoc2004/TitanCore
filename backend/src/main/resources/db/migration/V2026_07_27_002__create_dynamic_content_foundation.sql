@@ -48,16 +48,25 @@ begin
                     'acl|accesspolicy)$'
                 )
                 or normalized_key ~ (
-                    '^(navigation(target)?|destination(path)?|route(key|path)?|path|'
-                    'external(url)?|redirect(url)?|scheme)$'
+                    '^(navigation(destination|target|route|path|url)?|'
+                    'destination(path|route|url)?|route(key|name|target|path|url)?|'
+                    '(raw|internal|external)?route(target|path|url)?|path|'
+                    'external(url)?|redirect(target|url|uri|route|path)?|scheme)$'
                 )
                 or normalized_key ~ (
-                    '^(actions?|actioncommand|commands?|handlers?|callbacks?|'
-                    'eventhandlers?|executables?|expressions?|on[a-z]+)$'
+                    '^(actions?|action(type|name|key|command)?|commands?|'
+                    'command(type|name|key)?|handlers?|callbacks?|eventhandlers?|'
+                    'executables?|expressions?|expression(language|engine|template)?|'
+                    'on(click|load|error|submit|change|input|focus|blur|'
+                    'keydown|keyup|keypress|pointerdown|pointerup|mousedown|mouseup|'
+                    'touchstart|touchend|drag|drop|mouseover|mouseenter|mouseleave))$'
                 )
                 or normalized_key ~ (
-                    '^([a-z]*(script|html|css)[a-z]*|component(type|name)?|'
-                    'styles?|styletokens?|themetokens?)$'
+                    '^((java)?script(code|source|content)?|'
+                    'html(markup|content|template)?|'
+                    'css(rules|class|classes|content|text)?|component(type|name)?|'
+                    'styles?|style(config|rules|sheet|tokens?)?|'
+                    'theme(config|style|tokens?)?)$'
                 )
             then
                 return false;
@@ -349,6 +358,8 @@ left join content_publications replacement
 create function validate_content_publication()
 returns trigger
 language plpgsql
+security definer
+set search_path = pg_catalog, public
 as $$
 declare
     entry_archived_at timestamptz;
@@ -598,6 +609,8 @@ create index asset_objects_reviewer_idx
 create function protect_asset_object()
 returns trigger
 language plpgsql
+security definer
+set search_path = pg_catalog, public
 as $$
 begin
     if tg_op = 'DELETE' then
@@ -865,6 +878,8 @@ create index content_version_assets_variant_idx
 create function protect_content_version_asset()
 returns trigger
 language plpgsql
+security definer
+set search_path = pg_catalog, public
 as $$
 begin
     if tg_op <> 'INSERT' then
@@ -898,6 +913,9 @@ $$;
 create trigger content_version_assets_protect_trg
 before insert or update or delete on content_version_assets
 for each row execute function protect_content_version_asset();
+
+revoke all on function lock_content_version(uuid) from public;
+revoke all on function lock_asset_object(uuid) from public;
 
 do $$
 declare

@@ -252,17 +252,58 @@ class DynamicContentFoundationMigrationIntegrationTests {
                 """,
                 authorId
         )).hasMessageContaining("content_versions_payload_ck");
+        for (String unsafePayload : List.of(
+                "{\"nested\":[{\"actionType\":\"PUBLISH\"}]}",
+                "{\"nested\":[{\"commandName\":\"archive\"}]}",
+                "{\"nested\":[{\"redirectTarget\":\"profile\"}]}",
+                "{\"nested\":[{\"styleConfig\":{\"color\":\"red\"}}]}",
+                "{\"nested\":[{\"navigationDestination\":\"admin\"}]}",
+                "{\"nested\":[{\"expressionLanguage\":\"spel\"}]}",
+                "{\"nested\":[{\"requiredRoles\":[\"ADMIN\"]}]}",
+                "{\"nested\":[{\"allowedAuthorities\":[\"WRITE\"]}]}",
+                "{\"nested\":[{\"actionCommand\":\"delete\"}]}",
+                "{\"nested\":[{\"styleTokens\":{\"accent\":\"gold\"}}]}"
+        )) {
+            assertThatThrownBy(() -> insertVersion(
+                    entryId, 2, unsafePayload, authorId
+            )).hasMessageContaining("content_versions_payload_ck");
+        }
 
-        int maxCopyLength = largestAcceptedCopyLength();
         insertVersion(
                 entryId,
                 2,
+                """
+                {
+                  "locales": {
+                    "vi-VN": {
+                      "factionName": "Lien minh Titan",
+                      "satisfactionCopy": "Chien thang that da!",
+                      "description": "Noi dung mo ta tran danh",
+                      "onlineCount": 12
+                    },
+                    "en-US": {
+                      "factionName": "Titan Alliance",
+                      "satisfactionCopy": "That raid felt great!",
+                      "description": "A description of the raid",
+                      "onlineCount": 12
+                    }
+                  }
+                }
+                """,
+                authorId
+        );
+
+        int maxCopyLength = largestAcceptedCopyLength();
+        UUID boundedEntryId = insertEntry("banner.payload-bound", "BANNER");
+        insertVersion(
+                boundedEntryId,
+                1,
                 payloadWithCopyLength(maxCopyLength),
                 authorId
         );
         assertThatThrownBy(() -> insertVersion(
-                entryId,
-                3,
+                boundedEntryId,
+                2,
                 payloadWithCopyLength(maxCopyLength + 1),
                 authorId
         )).hasMessageContaining("content_versions_payload_ck");
@@ -728,6 +769,33 @@ class DynamicContentFoundationMigrationIntegrationTests {
         assertThatThrownBy(() -> jdbc.update(
                 "delete from asset_objects where id = ?", approvedAsset
         )).hasMessageContaining("reviewed asset metadata must be archived");
+
+        UUID reverseBindingVersion =
+                insertVersion(entryId, 4, "{\"copy\":\"Reverse binding\"}", null);
+        UUID reverseDraftAsset = insertImage(
+                "content/race/reverse-draft.webp", checksum(63), "DRAFT", null);
+        assertBindingWinsPublicationRace(
+                reverseBindingVersion,
+                reverseDraftAsset,
+                startsAt.plusHours(6),
+                "tc-reverse-binding-publication"
+        );
+
+        UUID reverseArchiveVersion =
+                insertVersion(entryId, 5, "{\"copy\":\"Reverse archive\"}", null);
+        UUID reverseApprovedAsset = insertImage(
+                "content/race/reverse-approved.webp",
+                checksum(64),
+                "APPROVED",
+                reviewerId
+        );
+        bindAsset(reverseArchiveVersion, reverseApprovedAsset, null, "PRIMARY", 0);
+        assertArchiveWinsPublicationRace(
+                reverseArchiveVersion,
+                reverseApprovedAsset,
+                startsAt.plusHours(8),
+                "tc-reverse-archive-publication"
+        );
     }
 
     @Test
@@ -1155,6 +1223,106 @@ class DynamicContentFoundationMigrationIntegrationTests {
         }
     }
 
+    private static void assertBindingWinsPublicationRace(
+            UUID versionId,
+            UUID assetId,
+            OffsetDateTime startsAt,
+            String applicationName
+    ) throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection binding = dataSource.getConnection();
+             Connection publication = dataSource.getConnection()) {
+            publication.setClientInfo("ApplicationName", applicationName);
+            binding.setAutoCommit(false);
+            publication.setAutoCommit(false);
+            bindAsset(binding, versionId, assetId);
+
+            Future<Throwable> publicationResult = executor.submit(() -> {
+                try {
+                    insertPublication(
+                            publication,
+                            versionId,
+                            "home.reverse-bind-race",
+                            startsAt,
+                            null
+                    );
+                    publication.commit();
+                    return null;
+                } catch (Throwable error) {
+                    publication.rollback();
+                    return error;
+                }
+            });
+            awaitDatabaseLock(applicationName);
+            binding.commit();
+            assertThat(publicationResult.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(SQLException.class)
+                    .satisfies(error -> assertThat(((SQLException) error).getSQLState())
+                            .isEqualTo("40001"));
+            assertThat(jdbc.queryForObject("""
+                    select count(*) from content_publications
+                    where content_version_id = ?
+                    """, Integer.class, versionId)).isZero();
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private static void assertArchiveWinsPublicationRace(
+            UUID versionId,
+            UUID assetId,
+            OffsetDateTime startsAt,
+            String applicationName
+    ) throws Exception {
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection archive = dataSource.getConnection();
+             Connection publication = dataSource.getConnection()) {
+            publication.setClientInfo("ApplicationName", applicationName);
+            archive.setAutoCommit(false);
+            publication.setAutoCommit(false);
+            try (PreparedStatement statement = archive.prepareStatement("""
+                    update asset_objects
+                    set review_state = 'ARCHIVED',
+                        archived_at = now(),
+                        updated_at = now()
+                    where id = ?
+                    """)) {
+                statement.setObject(1, assetId);
+                statement.executeUpdate();
+            }
+
+            Future<Throwable> publicationResult = executor.submit(() -> {
+                try {
+                    insertPublication(
+                            publication,
+                            versionId,
+                            "home.reverse-archive-race",
+                            startsAt,
+                            null
+                    );
+                    publication.commit();
+                    return null;
+                } catch (Throwable error) {
+                    publication.rollback();
+                    return error;
+                }
+            });
+            awaitDatabaseLock(applicationName);
+            archive.commit();
+            assertThat(publicationResult.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(SQLException.class)
+                    .hasMessageContaining("only approved assets");
+            assertThat(jdbc.queryForObject("""
+                    select count(*) from content_publications
+                    where content_version_id = ?
+                    """, Integer.class, versionId)).isZero();
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
     private static void awaitDatabaseLock(String applicationName) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
         while (System.nanoTime() < deadline) {
@@ -1257,6 +1425,22 @@ class DynamicContentFoundationMigrationIntegrationTests {
                     role_key, sort_order
                 ) values (?, ?, ?, ?, ?)
                 """, versionId, assetId, variantId, roleKey, sortOrder);
+    }
+
+    private static void bindAsset(
+            Connection connection,
+            UUID versionId,
+            UUID assetId
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+                insert into content_version_assets (
+                    content_version_id, asset_id, role_key, sort_order
+                ) values (?, ?, 'PRIMARY', 0)
+                """)) {
+            statement.setObject(1, versionId);
+            statement.setObject(2, assetId);
+            statement.executeUpdate();
+        }
     }
 
     private static UUID insertUser(String email, String username) {
