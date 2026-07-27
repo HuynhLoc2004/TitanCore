@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.flywaydb.core.Flyway;
@@ -77,6 +78,10 @@ class FlywaySchemaIntegrationTests {
         Flyway flyway = Flyway.configure()
                 .dataSource(dataSource)
                 .locations("classpath:db/migration")
+                .placeholders(Map.of(
+                        "runtimeRole", POSTGRES.getUsername(),
+                        "enforceRoleSeparation", "false"
+                ))
                 .validateOnMigrate(true)
                 .baselineOnMigrate(false)
                 .cleanDisabled(true)

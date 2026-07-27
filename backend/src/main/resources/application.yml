@@ -22,6 +22,9 @@ spring:
     validate-on-migrate: true
     baseline-on-migrate: false
     clean-disabled: true
+    placeholders:
+      runtimeRole: ${POSTGRES_USER:game}
+      enforceRoleSeparation: "false"
   data:
     redis:
       host: ${REDIS_HOST:localhost}
