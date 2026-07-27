@@ -20,6 +20,32 @@ fast to understand, and funny without sacrificing combat readability.
 - Published assets must share the same outline, lighting, perspective, and
   saturation rules. Mixing unrelated generated styles is not acceptable.
 
+## Scene-First Experience Target
+
+The owner-approved Raid Camp direction is scene-first. The illustrated world,
+player hero, destination, and featured boss carry the primary experience.
+React interface surfaces frame and clarify that world; they do not replace it
+with a generic dashboard or a wall of decorative cards.
+
+The approved quality references and practical asset breakdown are defined in
+the [Integrated Creative Target Pack](CREATIVE_TARGET_PACK.md). Those images are
+AI-assisted reference drafts, not runtime assets, final UI contracts, production
+copy, or authorization to fabricate live data.
+
+The visual target requires:
+
+- one coherent foreground, middle-distance, and background composition;
+- a featured boss visible before the primary raid decision;
+- a player silhouette with stronger emphasis than secondary application chrome;
+- compact support UI with real DOM text and controls;
+- portrait-specific mobile composition rather than a compressed desktop scene;
+- reviewed art variants that fit the published asset and performance budgets;
+- visual continuity across lobby, loading, combat, result, and reward surfaces.
+
+The historical Phase 4.2 lobby frontend commit is a technical prototype. Its
+CSS geometry and placeholder composition do not define final product quality.
+Reusable client behavior must be reviewed separately from its presentation.
+
 ## Color System
 
 Core palette:
@@ -228,6 +254,9 @@ For every target:
 
 ## Related Documents
 
+- [Integrated Creative Target Pack](CREATIVE_TARGET_PACK.md)
+- [Narrative Bible](NARRATIVE_BIBLE.md)
+- [Audio Bible](AUDIO_BIBLE.md)
 - [Game Shell Architecture](GAME_SHELL_ARCHITECTURE.md)
 - [Asset Pipeline](ASSET_PIPELINE.md)
 - [Phaser Renderer ADR](adr/ADR-PHASER-RENDERER.md)
