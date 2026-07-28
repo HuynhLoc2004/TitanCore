@@ -6,6 +6,8 @@ import type {
   WorldRuntimeStatus,
 } from '../runtimeTypes';
 import type { WorldQualityTier } from '../quality';
+import type { UnifiedInputState } from '../input/UnifiedInputState';
+import { KeyboardInputAdapter } from '../input/KeyboardInputAdapter';
 
 type MetricsCallback = (metrics: WorldRuntimeMetrics) => void;
 type StatusCallback = (status: WorldRuntimeStatus) => void;
@@ -25,6 +27,14 @@ export class LocalWorldScene extends Phaser.Scene {
   private metricDroppedMs = 0;
   private hidden = false;
   private visibilityListener?: () => void;
+  private readonly blurListener = () => this.inputState?.releaseAll();
+  private hero?: Phaser.Physics.Arcade.Sprite;
+  private keyboardAdapter?: KeyboardInputAdapter;
+  private inputState?: UnifiedInputState;
+  private readonly pointerDown = (pointer: Phaser.Input.Pointer) => {
+    if (pointer.leftButtonDown()) this.inputState?.setAction('POINTER', 'ATTACK', true);
+  };
+  private readonly pointerUp = () => this.inputState?.setAction('POINTER', 'ATTACK', false);
 
   constructor() {
     super({ key: 'LocalWorld', active: false });
@@ -33,8 +43,15 @@ export class LocalWorldScene extends Phaser.Scene {
   create() {
     const manifest = this.registry.get('worldManifest') as WorldManifest;
     const quality = this.registry.get('qualityTier') as WorldQualityTier;
+    this.inputState = this.registry.get('inputState') as UnifiedInputState;
+    this.inputState.beginGeneration();
     this.cameras.main.setBounds(0, 0, manifest.world.width, manifest.world.height);
-    this.physics.world.setBounds(0, 0, manifest.world.width, manifest.world.height);
+    this.physics.world.setBounds(
+      0,
+      manifest.navigation.minY,
+      manifest.world.width,
+      manifest.navigation.maxY - manifest.navigation.minY,
+    );
 
     manifest.layers.forEach((layer) => {
       this.add
@@ -47,20 +64,47 @@ export class LocalWorldScene extends Phaser.Scene {
 
     this.createAmbient(manifest, quality);
     manifest.entities.forEach((entity) => {
-      this.add
-        .sprite(entity.x, entity.y, entity.assetKey, entity.frame)
-        .setOrigin(0.5, 1)
-        .setScale(entity.scale)
-        .setDepth(entity.depth);
+      if (entity.kind === 'HERO') {
+        this.hero = this.physics.add
+          .sprite(entity.x, entity.y, entity.assetKey, entity.frame)
+          .setOrigin(0.5, 1)
+          .setScale(entity.scale)
+          .setDepth(entity.depth)
+          .setCollideWorldBounds(true);
+        const body = this.hero.body as Phaser.Physics.Arcade.Body;
+        body.setSize(150, 190).setOffset(146, 220);
+      } else {
+        this.add
+          .sprite(entity.x, entity.y, entity.assetKey, entity.frame)
+          .setOrigin(0.5, 1)
+          .setScale(entity.scale)
+          .setDepth(entity.depth);
+      }
     });
 
-    const hero = manifest.entities.find((entity) => entity.kind === 'HERO');
-    if (hero) {
-      this.cameras.main.centerOn(hero.x, hero.y - 120);
+    if (this.hero) {
+      this.anims.create({
+        key: 'hero-move-proof',
+        frames: this.anims.generateFrameNumbers(this.hero.texture.key, { start: 0, end: 3 }),
+        frameRate: 8,
+        repeat: -1,
+      });
+      this.cameras.main.startFollow(
+        this.hero,
+        true,
+        manifest.navigation.cameraLerp,
+        manifest.navigation.cameraLerp,
+        0,
+        90,
+      );
     }
+    this.keyboardAdapter = new KeyboardInputAdapter(this, this.inputState);
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, this.pointerDown);
+    this.input.on(Phaser.Input.Events.POINTER_UP, this.pointerUp);
 
     this.visibilityListener = () => this.handleVisibility();
     document.addEventListener('visibilitychange', this.visibilityListener);
+    window.addEventListener('blur', this.blurListener);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.disposeScene());
     this.emitStatus({ phase: 'READY', progress: 100, message: 'Local Khu runtime ready' });
     const onReady = this.registry.get('onReady') as (() => void) | undefined;
@@ -71,10 +115,20 @@ export class LocalWorldScene extends Phaser.Scene {
     if (this.hidden) {
       return;
     }
+    this.keyboardAdapter?.sample();
+    if (this.hero && this.inputState) {
+      const pointer = this.input.activePointer;
+      this.inputState.setAim(
+        'POINTER',
+        pointer.worldX - this.hero.x,
+        pointer.worldY - this.hero.y,
+      );
+    }
     const result = this.clock.advance(delta, (stepMs) => {
       this.previousSimulationTime = this.simulationTime;
       this.simulationTime += stepMs;
       this.metricSimulationSteps += 1;
+      this.simulateMovement();
     });
     this.metricDroppedMs += result.droppedMs;
     this.renderAmbient(result.alpha);
@@ -85,6 +139,24 @@ export class LocalWorldScene extends Phaser.Scene {
     if (this.metricElapsed >= 1000) {
       this.emitMetrics();
     }
+  }
+
+  private simulateMovement() {
+    if (!this.hero || !this.inputState) return;
+    const manifest = this.registry.get('worldManifest') as WorldManifest;
+    const input = this.inputState.snapshot();
+    this.hero.setVelocity(
+      input.moveX * manifest.navigation.moveSpeed,
+      input.moveY * manifest.navigation.moveSpeed,
+    );
+    if (input.moveX !== 0 || input.moveY !== 0) {
+      if (!this.hero.anims.isPlaying) this.hero.play('hero-move-proof');
+      if (input.moveX !== 0) this.hero.setFlipX(input.moveX < 0);
+    } else {
+      this.hero.setVelocity(0, 0);
+      this.hero.stop().setFrame(0);
+    }
+    this.cameras.main.setFollowOffset(-input.moveX * 85, 90 - input.moveY * 32);
   }
 
   private createAmbient(manifest: WorldManifest, quality: WorldQualityTier) {
@@ -156,6 +228,7 @@ export class LocalWorldScene extends Phaser.Scene {
 
   private handleVisibility() {
     this.hidden = document.hidden;
+    if (this.hidden) this.inputState?.releaseAll();
     this.clock.reset();
     this.emitStatus({
       phase: this.hidden ? 'SLEEPING' : 'READY',
@@ -178,7 +251,15 @@ export class LocalWorldScene extends Phaser.Scene {
     if (this.visibilityListener) {
       document.removeEventListener('visibilitychange', this.visibilityListener);
     }
+    window.removeEventListener('blur', this.blurListener);
     this.visibilityListener = undefined;
+    this.input.off(Phaser.Input.Events.POINTER_DOWN, this.pointerDown);
+    this.input.off(Phaser.Input.Events.POINTER_UP, this.pointerUp);
+    this.keyboardAdapter?.destroy();
+    this.keyboardAdapter = undefined;
+    this.inputState?.releaseAll();
+    this.inputState = undefined;
+    this.hero = undefined;
     this.clock.reset();
     this.cloudLayer = undefined;
   }

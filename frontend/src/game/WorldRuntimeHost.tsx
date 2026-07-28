@@ -5,12 +5,14 @@ import type {
   WorldRuntimeMetrics,
   WorldRuntimeStatus,
 } from './world/runtimeTypes';
+import type { UnifiedInputState } from './world/input/UnifiedInputState';
 
 type WorldRuntimeFactory = typeof createWorldRuntime;
 
 type WorldRuntimeHostProps = {
   manifestUrl: string;
   reducedMotion: boolean;
+  inputState: UnifiedInputState;
   retryGeneration: number;
   onStatus: (status: WorldRuntimeStatus) => void;
   onMetrics: (metrics: WorldRuntimeMetrics) => void;
@@ -24,6 +26,7 @@ const loadWorldRuntime: NonNullable<WorldRuntimeHostProps['loadRenderer']> = () 
 export function WorldRuntimeHost({
   manifestUrl,
   reducedMotion,
+  inputState,
   retryGeneration,
   onStatus,
   onMetrics,
@@ -73,6 +76,7 @@ export function WorldRuntimeHost({
           parent,
           manifestUrl,
           reducedMotion,
+          inputState,
           onStatus: (status) => {
             if (!disposed && generation === generationRef.current) {
               statusRef.current(status);
@@ -91,13 +95,14 @@ export function WorldRuntimeHost({
 
     return () => {
       disposed = true;
+      inputState.releaseAll();
       window.clearTimeout(startupTimer);
       generationRef.current += 1;
       handleRef.current?.destroy();
       handleRef.current = null;
       parent.replaceChildren();
     };
-  }, [loadRenderer, manifestUrl, retryGeneration]);
+  }, [inputState, loadRenderer, manifestUrl, retryGeneration]);
 
   useEffect(() => {
     handleRef.current?.setReducedMotion(reducedMotion);

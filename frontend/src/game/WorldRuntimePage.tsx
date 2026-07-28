@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { navigate } from '../app/AppRoutes';
 import { WorldRuntimeHost } from './WorldRuntimeHost';
 import type {
@@ -6,6 +6,8 @@ import type {
   WorldRuntimeStatus,
 } from './world/runtimeTypes';
 import './world-runtime.css';
+import { UnifiedInputState } from './world/input/UnifiedInputState';
+import { MobileControls } from './MobileControls';
 
 const MANIFEST_URL = '/assets/world-proof/raid-camp-world.json';
 const INITIAL_STATUS: WorldRuntimeStatus = {
@@ -26,6 +28,7 @@ const INITIAL_METRICS: WorldRuntimeMetrics = {
 };
 
 export function WorldRuntimePage() {
+  const inputState = useRef(new UnifiedInputState()).current;
   const [status, setStatus] = useState(INITIAL_STATUS);
   const [metrics, setMetrics] = useState(INITIAL_METRICS);
   const [retryGeneration, setRetryGeneration] = useState(0);
@@ -44,7 +47,7 @@ export function WorldRuntimePage() {
     <main className="tc-world-runtime">
       <header className="tc-world-runtime__header">
         <div>
-          <p className="tc-world-runtime__eyebrow">Phase 5.2A runtime foundation</p>
+          <p className="tc-world-runtime__eyebrow">Phase 5.2B movement foundation</p>
           <h1>Raid Camp Local Khu</h1>
         </div>
         <div className="tc-world-runtime__actions">
@@ -67,10 +70,12 @@ export function WorldRuntimePage() {
         <WorldRuntimeHost
           manifestUrl={MANIFEST_URL}
           reducedMotion={reducedMotion}
+          inputState={inputState}
           retryGeneration={retryGeneration}
           onStatus={updateStatus}
           onMetrics={updateMetrics}
         />
+        <MobileControls input={inputState} disabled={status.phase !== 'READY'} />
         {(status.phase === 'BOOT' || status.phase === 'LOADING') && (
           <div className="tc-world-runtime__loading" role="status" aria-live="polite">
             <span className="tc-world-runtime__loader" aria-hidden="true" />
@@ -94,8 +99,7 @@ export function WorldRuntimePage() {
       </section>
 
       <footer id="world-runtime-scope" className="tc-world-runtime__note">
-        Local runtime proof only. Input, movement, combat, loot and multiplayer authority
-        remain outside this phase.
+        Local movement proof only. Combat, loot and multiplayer authority remain outside this phase.
       </footer>
     </main>
   );

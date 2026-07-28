@@ -11,6 +11,12 @@ function validManifest() {
       height: 720,
       backgroundColor: '#090b18',
     },
+    navigation: {
+      minY: 300,
+      maxY: 680,
+      moveSpeed: 260,
+      cameraLerp: 0.09,
+    },
     regions: [
       {
         id: 'safe-hub',
@@ -120,5 +126,15 @@ describe('parseWorldManifest', () => {
     const missingExit = validManifest();
     missingExit.regions[1].kind = 'HUNTING';
     expect(() => parseWorldManifest(missingExit)).toThrow(/end with an exit gate/);
+  });
+
+  it('rejects unsafe navigation bounds and movement tuning', () => {
+    const inverted = validManifest();
+    inverted.navigation.minY = 700;
+    expect(() => parseWorldManifest(inverted)).toThrow();
+
+    const excessiveSpeed = validManifest();
+    excessiveSpeed.navigation.moveSpeed = 900;
+    expect(() => parseWorldManifest(excessiveSpeed)).toThrow();
   });
 });

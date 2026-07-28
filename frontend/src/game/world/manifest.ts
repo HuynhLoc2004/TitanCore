@@ -58,6 +58,12 @@ export type WorldManifest = {
     height: number;
     backgroundColor: string;
   };
+  navigation: {
+    minY: number;
+    maxY: number;
+    moveSpeed: number;
+    cameraLerp: number;
+  };
   regions: WorldRegionDefinition[];
   assets: WorldAssetDefinition[];
   layers: WorldLayerDefinition[];
@@ -84,7 +90,7 @@ export function parseWorldManifest(value: unknown): WorldManifest {
   const manifest = requireRecord(value, 'manifest');
   requireExactKeys(
     manifest,
-    ['schemaVersion', 'world', 'regions', 'assets', 'layers', 'entities', 'ambient'],
+    ['schemaVersion', 'world', 'navigation', 'regions', 'assets', 'layers', 'entities', 'ambient'],
     'manifest',
   );
   if (manifest.schemaVersion !== 1) {
@@ -92,6 +98,7 @@ export function parseWorldManifest(value: unknown): WorldManifest {
   }
 
   const world = parseWorld(manifest.world);
+  const navigation = parseNavigation(manifest.navigation, world.height);
   const regions = requireArray(manifest.regions, 'regions').map(parseRegion);
   const assets = requireArray(manifest.assets, 'assets').map(parseAsset);
   const layers = requireArray(manifest.layers, 'layers').map(parseLayer);
@@ -145,11 +152,26 @@ export function parseWorldManifest(value: unknown): WorldManifest {
   return {
     schemaVersion: 1,
     world,
+    navigation,
     regions,
     assets,
     layers,
     entities,
     ambient,
+  };
+}
+
+function parseNavigation(value: unknown, worldHeight: number): WorldManifest['navigation'] {
+  const navigation = requireRecord(value, 'navigation');
+  requireExactKeys(navigation, ['minY', 'maxY', 'moveSpeed', 'cameraLerp'], 'navigation');
+  const minY = requireNumber(navigation.minY, 0, worldHeight, 'navigation.minY');
+  const maxY = requireNumber(navigation.maxY, 0, worldHeight, 'navigation.maxY');
+  if (maxY <= minY) throw new WorldManifestError('navigation must have a positive vertical range.');
+  return {
+    minY,
+    maxY,
+    moveSpeed: requireNumber(navigation.moveSpeed, 60, 600, 'navigation.moveSpeed'),
+    cameraLerp: requireNumber(navigation.cameraLerp, 0.01, 0.3, 'navigation.cameraLerp'),
   };
 }
 
