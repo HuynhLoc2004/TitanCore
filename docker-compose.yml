@@ -12,6 +12,8 @@ services:
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
       RABBITMQ_HOST: rabbitmq
+      OBJECT_STORAGE_ENABLED: ${OBJECT_STORAGE_ENABLED:-false}
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
     ports:
       - "${SERVER_PORT:-8080}:8080"
     depends_on:
@@ -78,6 +80,35 @@ services:
     networks:
       - game-network
 
+  minio:
+    build:
+      context: ./docker/minio
+      dockerfile: Dockerfile
+    image: titancore/minio:RELEASE.2025-10-15T17-29-55Z
+    container_name: game-minio
+    profiles: ["assets"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        test -n "$$MINIO_ROOT_USER" &&
+        test -n "$$MINIO_ROOT_PASSWORD" &&
+        exec minio server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - game-network
+
   nginx:
     image: nginx:1.27-alpine
     container_name: game-nginx
@@ -94,6 +125,7 @@ volumes:
   postgres-data:
   redis-data:
   rabbitmq-data:
+  minio-data:
 
 networks:
   game-network:

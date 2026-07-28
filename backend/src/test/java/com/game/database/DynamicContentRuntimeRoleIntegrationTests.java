@@ -389,6 +389,14 @@ class DynamicContentRuntimeRoleIntegrationTests {
         properties.put("OAUTH_FAILURE_REDIRECT_URI",
                 "https://test.titancore.invalid/auth/oauth/callback");
         properties.put("CORS_ALLOWED_ORIGINS", "https://test.titancore.invalid");
+        properties.put("OBJECT_STORAGE_ENDPOINT", "https://storage.test.titancore.invalid");
+        properties.put("OBJECT_STORAGE_REGION", "test-region-1");
+        properties.put("OBJECT_STORAGE_PRIVATE_BUCKET", "titancore-test-private");
+        properties.put("OBJECT_STORAGE_PUBLIC_BUCKET", "titancore-test-published");
+        properties.put("OBJECT_STORAGE_ACCESS_KEY", randomPassword());
+        properties.put("OBJECT_STORAGE_SECRET_KEY", randomPassword());
+        properties.put("ASSET_PUBLIC_BASE_URL",
+                "https://assets.test.titancore.invalid/titancore-test-published");
         return properties;
     }
 
