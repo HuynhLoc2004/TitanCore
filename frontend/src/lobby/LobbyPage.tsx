@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, RefObject } from 'react';
 import type { User } from '../auth/api';
 import { fetchLobbyBootstrap } from './api';
 import type { LobbyAsset, LobbyBootstrap, LobbySection } from './types';
@@ -18,6 +19,8 @@ const allowedAssetProtocols = new Set(['https:', 'http:']);
 
 export function LobbyPage({ user, onLogout }: LobbyPageProps) {
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading' });
+  const campRef = useRef<HTMLElement>(null);
+  useCampParallax(campRef);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,8 +47,9 @@ export function LobbyPage({ user, onLogout }: LobbyPageProps) {
     : user.profile.displayName;
 
   return (
-    <main className="tc-raid-camp">
+    <main className="tc-raid-camp" ref={campRef}>
       <div className="tc-raid-camp__scene" aria-hidden="true" />
+      <CampAtmosphere />
       <a className="tc-skip-link" href="#raid-camp-content">Skip to camp content</a>
 
       <header className="tc-camp-header">
@@ -80,6 +84,25 @@ export function LobbyPage({ user, onLogout }: LobbyPageProps) {
         </div>
       </div>
     </main>
+  );
+}
+
+function CampAtmosphere() {
+  return (
+    <div className="tc-camp-atmosphere" aria-hidden="true">
+      <div className="tc-camp-portal">
+        <span className="tc-camp-portal__ring" />
+        <span className="tc-camp-portal__core" />
+      </div>
+      <span className="tc-camp-fire tc-camp-fire--one" />
+      <span className="tc-camp-fire tc-camp-fire--two" />
+      <span className="tc-camp-fire tc-camp-fire--three" />
+      <div className="tc-camp-embers">
+        {Array.from({ length: 10 }, (_, index) => (
+          <span key={index} style={{ '--ember-index': index } as CSSProperties} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -290,4 +313,39 @@ function safeAssetUrl(value: string | null) {
   } catch {
     return false;
   }
+}
+
+function useCampParallax(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof window.matchMedia !== 'function') {
+      return;
+    }
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let frame = 0;
+    const update = (event: PointerEvent) => {
+      if (reducedMotion.matches || event.pointerType === 'touch') {
+        return;
+      }
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const x = ((event.clientX / window.innerWidth) - 0.5) * 2;
+        const y = ((event.clientY / window.innerHeight) - 0.5) * 2;
+        element.style.setProperty('--camp-pointer-x', x.toFixed(3));
+        element.style.setProperty('--camp-pointer-y', y.toFixed(3));
+      });
+    };
+    const reset = () => {
+      element.style.setProperty('--camp-pointer-x', '0');
+      element.style.setProperty('--camp-pointer-y', '0');
+    };
+    window.addEventListener('pointermove', update, { passive: true });
+    window.addEventListener('blur', reset);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('pointermove', update);
+      window.removeEventListener('blur', reset);
+      reset();
+    };
+  }, [ref]);
 }

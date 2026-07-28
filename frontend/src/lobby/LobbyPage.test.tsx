@@ -45,6 +45,8 @@ describe('Raid Camp lobby', () => {
     expect(screen.getByText(/no raid dispatches yet/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /inventory/i })).toBeDisabled();
     expect(screen.queryByText(/players online|reward|ends in/i)).not.toBeInTheDocument();
+    expect(document.querySelector('.tc-camp-atmosphere')).toHaveAttribute('aria-hidden', 'true');
+    expect(document.querySelectorAll('.tc-camp-embers span')).toHaveLength(10);
   });
 
   it('renders only allowlisted typed bootstrap sections and safe remote asset URLs', async () => {
