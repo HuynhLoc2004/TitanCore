@@ -133,6 +133,14 @@ content.draft.write
 content.review
 content.publish
 content.rollback
+content.boss.write
+content.monster.write
+content.spawn.write
+content.loot.write
+content.encounter.review
+content.encounter.publish
+content.encounter.rollback
+liveops.encounter.emergency_toggle
 ai_content.review
 ai_content.promote_to_draft
 payment.order.read
@@ -168,6 +176,9 @@ For the first implementation, a small static permission registry may be acceptab
 | Admin user and role management | Yes | No | No | No | No | No |
 | Content draft/write | Yes | Yes | No | No | No | No |
 | Content publish/rollback | Step-up | Step-up | No | No | No | No |
+| Boss/monster/spawn/loot draft | Yes | Yes | No | No | No | No |
+| Encounter publish/rollback | Step-up | Step-up | No | No | No | No |
+| Encounter emergency toggle | Step-up | No by default | No | No | No | No |
 | AI content review | Yes | Yes | No | No | No | No |
 | Moderation actions | Yes | No | Yes | No | Escalate only | No |
 | Payment read | Yes | No | No | Yes | Summary only | No |

@@ -235,10 +235,24 @@ remain code-owned.
 Admin implementation is separately approved and must support:
 
 - draft, review, preview, publish, schedule, archive, and rollback-as-new-version;
+- boss creation, map assignment, health, phase, skill, schedule, and despawn
+  configuration;
+- boss loot-table item references, quantity bounds, eligibility, and bounded
+  drop probabilities;
+- multiple monster definitions per map, spawn groups, habitats, respawn policy,
+  and configurable per-Khu population budgets;
+- pre-publish validation of aggregate simulation, rendering, encounter, and
+  reward-economy impact;
 - immutable audit;
 - human approval for AI-generated assets;
 - active-map version pinning;
 - no direct mutation of active Redis state.
+
+Boss HP, loot, and population changes are sensitive publishes and require
+step-up authentication. Active encounters and pinned map instances remain on
+their current version; publication affects only approved lifecycle boundaries.
+Emergency controls may disable future spawns or admissions but cannot edit
+active HP, revoke confirmed loot, or rewrite finalized rewards.
 
 No generated asset is production content merely because it appears in a review
 pack.

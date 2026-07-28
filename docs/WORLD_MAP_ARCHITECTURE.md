@@ -144,6 +144,8 @@ At most one Khu in a map instance hosts the active map boss.
 - Boss defeat and reward finalization remain durable and idempotent.
 - Boss absence never stops ordinary hunting, NPC interaction, exploration, or
   world progression that does not explicitly require that encounter.
+- Boss definition, map assignment, health, schedule, and loot-table version are
+  pinned before the encounter becomes active.
 
 A boss announcement is informational, not a reservation. The UI must state
 when the destination becomes full without implying that entry is guaranteed.
@@ -167,6 +169,8 @@ Every Khu can host ordinary monsters independently of the boss:
   player without changing durable reward facts;
 - deterministic or server-recorded spawn seeds support diagnosis without
   making the client authoritative.
+- Admin-authored population settings are validated against per-group, per-Khu,
+  and per-map caps before publication.
 
 Exact monster families, statistics, skills, drop tables, pathfinding, and spawn
 rates require later gameplay and content approval.
@@ -314,6 +318,23 @@ and versioned. Code owns:
 Admin publishing affects newly created map instances unless an explicitly
 approved emergency operation says otherwise. Admin tools never mutate active
 Redis world keys directly.
+
+Future Admin tooling may configure boss-to-map assignments, boss health and
+schedule, boss loot tables, monster types, spawn groups, respawn policy, and
+population budgets. Every change follows draft, review, preview, publish,
+schedule, archive, and rollback-as-new-version. Sensitive encounter or economy
+changes require step-up authentication and immutable audit.
+
+Published versions are applied only at an approved lifecycle boundary:
+
+- a newly created map instance uses the latest eligible published version;
+- an existing map instance keeps its pinned world and population version;
+- a future runtime may adopt a new spawn-set version at a clean spawn boundary
+  only after that transition contract is separately approved;
+- an active boss encounter never changes HP, phases, loot, or schedule because
+  an Admin published another version;
+- emergency controls may stop future spawn or admission, never rewrite active
+  combat or finalized rewards.
 
 Future persistence proposals may include durable map definitions, spawn sets,
 and encounter definitions. They are not approved migrations by this document.
