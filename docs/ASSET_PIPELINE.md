@@ -2,9 +2,14 @@
 
 ## Status And Scope
 
-This document defines the future asset lifecycle and storage boundary. It does
-not approve object-storage infrastructure, SDK dependencies, migrations, APIs,
-Admin UI, asset production, AI providers, or CDN configuration.
+This document defines the approved asset lifecycle and storage boundary.
+[ADR: Provider-Neutral Asset Delivery](adr/ADR-ASSET-DELIVERY.md) records the
+Phase 4.3 storage and delivery decision.
+
+Implementation remains separated into reviewed pull requests. This document
+does not itself add object-storage infrastructure, SDK dependencies,
+migrations, APIs, Admin UI, asset production, AI providers, or CDN
+configuration.
 
 Images and audio are never stored as PostgreSQL binary data.
 
@@ -33,6 +38,9 @@ TitanCore uses a provider-neutral S3-compatible object-storage abstraction:
 - MinIO for local development.
 - Cloudflare R2 for production.
 - CDN or approved public delivery domain in front of published assets.
+- Separate private and published buckets.
+- AWS SDK for Java 2.x behind the provider adapter for the first
+  implementation.
 
 Application domain code depends on an object-storage port, not provider-specific
 classes. Provider adapters translate endpoint, region, path-style, signing, and
@@ -46,6 +54,9 @@ Required abstract operations are limited and capability-oriented:
 - publish or copy an approved immutable variant;
 - generate bounded preview access;
 - mark objects for retention-aware deletion.
+
+Published Lobby and combat reads do not invoke these operations. Their URLs are
+derived from trusted metadata and the configured public delivery base URI.
 
 Bucket administration and broad list/delete permissions do not belong in
 ordinary application runtime credentials.
@@ -67,7 +78,14 @@ ordinary application runtime credentials.
 - Uses content-hashed object keys.
 - Served with long-lived immutable cache headers.
 - Public delivery uses the approved asset/CDN base URL, not storage credentials.
-- Replacing an asset creates a new object and manifest version.
+- Replacing an asset creates a new object and published dependency set.
+- Is physically isolated from the private bucket.
+
+Publication copies and verifies immutable candidates before committing the
+PostgreSQL publication. A failed database transaction may leave an unreferenced
+copy, but cannot leave committed content pointing at a missing critical object.
+Cleanup handles unreferenced copies asynchronously after a reference check and
+retention delay.
 
 ## Presigned Upload Rules
 
@@ -154,9 +172,8 @@ authentication. The action and approved version require immutable audit.
 
 ## Publishing And Manifests
 
-A published manifest is immutable and includes:
+A published dependency set is immutable and includes:
 
-- manifest ID and version;
 - content version references;
 - asset IDs and exact immutable variants;
 - checksums and delivery paths;
@@ -164,9 +181,14 @@ A published manifest is immutable and includes:
 - quality-tier mapping;
 - created, approved, and published timestamps.
 
-Battle-room creation pins the published content and manifest versions. Publishing
-or rollback never changes an active room. Rollback publishes a new manifest
-that references a prior known-good set for future rooms.
+For the first vertical slice, `content_versions`, `content_version_assets`,
+`asset_variants`, and `content_publications` form the manifest-equivalent
+representation. A separate manifest table is not approved.
+
+Battle-room creation pins the published content versions and resolved immutable
+dependency set. Publishing or rollback never changes an active room. Rollback
+creates a new publication that references a prior known-good set for future
+rooms.
 
 ## Retention And Deletion
 
@@ -213,21 +235,21 @@ must never inject scripts, arbitrary URLs, routes, permissions, or components.
 
 ## External Configuration Timeline
 
-No configuration is requested in Phase 4.0.
+The documentation phase defines names only and does not request values.
 
 | Later phase | Expected environment references |
 | --- | --- |
-| Local storage adapter | `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_REGION`, `OBJECT_STORAGE_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY`, `OBJECT_STORAGE_SECRET_KEY`, `OBJECT_STORAGE_PATH_STYLE` |
+| Local storage adapter | `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_REGION`, `OBJECT_STORAGE_PRIVATE_BUCKET`, `OBJECT_STORAGE_PUBLIC_BUCKET`, `OBJECT_STORAGE_ACCESS_KEY`, `OBJECT_STORAGE_SECRET_KEY`, `OBJECT_STORAGE_PATH_STYLE` |
 | Published delivery | `ASSET_PUBLIC_BASE_URL` |
 | Production R2/CDN | Provider-neutral values above bound to approved R2 bucket and CDN configuration |
 | AI/media generation | Provider credentials approved only in the separate generation phase |
 
-Values remain outside source control. Phase 4.0 does not request, validate, or
-configure any key.
+Values remain outside source control. The Phase 4.3 documentation pull request
+does not request, validate, or configure any key.
 
-## Phase 4.0 Exclusions
+## Phase 4.3 Documentation Exclusions
 
-- No MinIO or R2 deployment.
+- No MinIO or R2 deployment in the documentation pull request.
 - No storage SDK or application adapter.
 - No migration or asset table.
 - No upload or delivery API.

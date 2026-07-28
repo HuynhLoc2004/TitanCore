@@ -285,6 +285,11 @@ receive implicit approval.
 6. Implement live room discovery without fabricated data.
 7. Implement the Phaser first playable slice with authoritative realtime
    contracts.
+
+Phase 4.3 follows the accepted
+[provider-neutral asset delivery ADR](adr/ADR-ASSET-DELIVERY.md): private
+draft/quarantine storage, a separate published bucket, immutable CDN delivery,
+and no storage call in Lobby rendering or the combat loop.
 8. Validate the complete journey before expanding bosses, maps, items, or
    seasons.
 
