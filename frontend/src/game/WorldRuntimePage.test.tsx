@@ -70,7 +70,7 @@ describe('WorldRuntimePage', () => {
     expect(metrics).toHaveTextContent('4 screens');
     expect(metrics).toHaveTextContent('5 regions');
     expect(metrics).toHaveTextContent('HIGH');
-    expect(screen.getByText(/local movement proof only/i)).toBeInTheDocument();
+    expect(screen.getByText(/owner-review locomotion proof/i)).toBeInTheDocument();
     expect(screen.getByText(/combat, loot and multiplayer authority remain outside/i))
       .toBeInTheDocument();
   });

@@ -8,6 +8,12 @@ import type {
 import type { WorldQualityTier } from '../quality';
 import type { UnifiedInputState } from '../input/UnifiedInputState';
 import { KeyboardInputAdapter } from '../input/KeyboardInputAdapter';
+import {
+  animationKeyFor,
+  CORE_RAIDER_ANIMATIONS,
+  CORE_RAIDER_FRAME,
+  selectLocomotionState,
+} from '../locomotion';
 
 type MetricsCallback = (metrics: WorldRuntimeMetrics) => void;
 type StatusCallback = (status: WorldRuntimeStatus) => void;
@@ -31,6 +37,7 @@ export class LocalWorldScene extends Phaser.Scene {
   private hero?: Phaser.Physics.Arcade.Sprite;
   private keyboardAdapter?: KeyboardInputAdapter;
   private inputState?: UnifiedInputState;
+  private dodgeWasPressed = false;
   private readonly pointerDown = (pointer: Phaser.Input.Pointer) => {
     if (pointer.leftButtonDown()) this.inputState?.setAction('POINTER', 'ATTACK', true);
   };
@@ -67,7 +74,10 @@ export class LocalWorldScene extends Phaser.Scene {
       if (entity.kind === 'HERO') {
         this.hero = this.physics.add
           .sprite(entity.x, entity.y, entity.assetKey, entity.frame)
-          .setOrigin(0.5, 1)
+          .setOrigin(
+            CORE_RAIDER_FRAME.pivotX / CORE_RAIDER_FRAME.width,
+            CORE_RAIDER_FRAME.groundY / CORE_RAIDER_FRAME.height,
+          )
           .setScale(entity.scale)
           .setDepth(entity.depth)
           .setCollideWorldBounds(true);
@@ -83,12 +93,8 @@ export class LocalWorldScene extends Phaser.Scene {
     });
 
     if (this.hero) {
-      this.anims.create({
-        key: 'hero-move-proof',
-        frames: this.anims.generateFrameNumbers(this.hero.texture.key, { start: 0, end: 3 }),
-        frameRate: 8,
-        repeat: -1,
-      });
+      this.createHeroAnimations(this.hero.texture.key);
+      this.hero.play(CORE_RAIDER_ANIMATIONS.idle.key);
       this.cameras.main.startFollow(
         this.hero,
         true,
@@ -145,18 +151,35 @@ export class LocalWorldScene extends Phaser.Scene {
     if (!this.hero || !this.inputState) return;
     const manifest = this.registry.get('worldManifest') as WorldManifest;
     const input = this.inputState.snapshot();
+    const dodgePressed = input.actions.has('DODGE');
+    const dodgeStarted = dodgePressed && !this.dodgeWasPressed;
+    this.dodgeWasPressed = dodgePressed;
     this.hero.setVelocity(
       input.moveX * manifest.navigation.moveSpeed,
       input.moveY * manifest.navigation.moveSpeed,
     );
-    if (input.moveX !== 0 || input.moveY !== 0) {
-      if (!this.hero.anims.isPlaying) this.hero.play('hero-move-proof');
-      if (input.moveX !== 0) this.hero.setFlipX(input.moveX < 0);
-    } else {
-      this.hero.setVelocity(0, 0);
-      this.hero.stop().setFrame(0);
+    if (input.moveX !== 0) this.hero.setFlipX(input.moveX < 0);
+    if (dodgeStarted) {
+      this.hero.play(CORE_RAIDER_ANIMATIONS.dodgeVisual.key, true);
+    } else if (this.hero.anims.currentAnim?.key !== CORE_RAIDER_ANIMATIONS.dodgeVisual.key
+      || !this.hero.anims.isPlaying) {
+      const locomotion = selectLocomotionState(input.moveX, input.moveY);
+      this.hero.play(animationKeyFor(locomotion), true);
     }
     this.cameras.main.setFollowOffset(-input.moveX * 85, 90 - input.moveY * 32);
+  }
+
+  private createHeroAnimations(textureKey: string) {
+    Object.values(CORE_RAIDER_ANIMATIONS).forEach((animation) => {
+      if (this.anims.exists(animation.key)) return;
+      this.anims.create({
+        key: animation.key,
+        frames: animation.frames.map((frame) => ({ key: textureKey, frame })),
+        frameRate: animation.frameRate,
+        repeat: animation.repeat,
+        skipMissedFrames: true,
+      });
+    });
   }
 
   private createAmbient(manifest: WorldManifest, quality: WorldQualityTier) {
@@ -260,6 +283,7 @@ export class LocalWorldScene extends Phaser.Scene {
     this.inputState?.releaseAll();
     this.inputState = undefined;
     this.hero = undefined;
+    this.dodgeWasPressed = false;
     this.clock.reset();
     this.cloudLayer = undefined;
   }
