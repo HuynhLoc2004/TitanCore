@@ -16,16 +16,19 @@ The first playable realtime slice is:
 login
   -> profile onboarding
   -> dynamic Raid Camp
-  -> enter published map
+  -> select an owned hero
+  -> enter a published hunting world through a Core Gate
   -> server places player into one of 15 Khu
   -> move with desktop or mobile controls
   -> see and chat with up to nine other players
-  -> fight ordinary monsters
+  -> fight populations of ordinary monsters
+  -> meet a story NPC and progress a world objective
   -> receive map-wide boss announcement
   -> switch to the boss Khu when space permits
   -> fight with authoritative combat
   -> receive confirmed loot through the flying companion
-  -> return to a durable result and inventory state
+  -> satisfy a soft progression gate
+  -> travel through an in-world gate to the next eligible world
 ```
 
 ## Phase 5.0: Architecture Contract
@@ -33,10 +36,13 @@ login
 Deliverables:
 
 - world map and Khu ownership;
+- Connected Hunt Worlds and in-world traversal;
 - placement and switching policy;
+- multi-hero, NPC, progression, and economy boundaries;
 - realtime protocol and Redis boundary;
 - desktop/mobile unified input;
-- animated map, character, monster, boss, VFX, audio, and performance gates;
+- Living Cinematic Map, character, monster, boss, VFX, audio, and performance
+  gates;
 - implementation sequencing and load-test acceptance.
 
 No runtime code or schema is included.
@@ -45,10 +51,11 @@ No runtime code or schema is included.
 
 Small PR sequence:
 
-1. Runtime asset cleanup and atlas metadata for one Core Raider.
+1. Runtime asset cleanup and atlas metadata for one Core Raider. This validates
+   the production pipeline and does not limit the final hero roster.
 2. Phaser-only preview scene with idle, move, attack, hit, and defeat/recovery
    animation states.
-3. One ordinary monster animation set.
+3. One ordinary monster type animation set rendered as multiple test instances.
 4. Rubber Duck King telegraph and attack proof.
 5. One map ambience layer proof.
 
@@ -80,8 +87,9 @@ Architecture approval required for:
 - loading and recovery states.
 
 Initial implementation is one offline/local Khu with one hero, one ordinary
-monster, and ambient map layers. It proves presentation and lifecycle without
-pretending multiplayer is complete.
+monster type with multiple instances, and ambient map layers. It proves
+presentation and lifecycle without pretending the released game has only one
+hero, monster, map, or boss.
 
 ## Phase 5.3: Realtime Protocol And Presence
 
@@ -117,11 +125,13 @@ Deliverables:
 
 No queue is added for a full boss Khu.
 
-## Phase 5.5: Ordinary Monster Vertical Slice
+## Phase 5.5: Monster Ecology Vertical Slice
 
 Deliverables:
 
 - approved monster definition and spawn contract;
+- multiple spawn groups and concurrent monster instances;
+- respawn and population budgets;
 - server-authoritative movement/combat intentions;
 - one ordinary monster family;
 - hitbox and telegraph design;
@@ -159,7 +169,32 @@ Deliverables:
 - idempotent reconnect behavior;
 - no inventory mutation from the client.
 
-## Phase 5.8: Multiplayer Performance Gate
+## Phase 5.8: Hero Roster And Mentor Proof
+
+Deliverables:
+
+- Hero Codex presentation contract;
+- one additional hero proves roster extensibility;
+- server-owned hero selection;
+- one Skill Mentor interaction;
+- gameplay-earned Core Insight progression proof;
+- no payment, premium exchange, shop, or production economy.
+
+Hero count, skill trees, currencies, Mentor costs, and premium acceleration
+require their own approval.
+
+## Phase 5.9: World Gate And Multi-Map Proof
+
+Deliverables:
+
+- one additional small world proves the world graph;
+- server-authoritative unlock evaluation;
+- source-to-destination reservation and manifest pinning;
+- loading, failure recovery, and return travel;
+- world-specific monster, NPC, boss, music, and ambience references;
+- no boss-selection menu as the primary traversal model.
+
+## Phase 5.10: Multiplayer Performance Gate
 
 Required scenarios:
 
@@ -171,6 +206,10 @@ Required scenarios:
 - chat and map announcements;
 - slow clients, reconnects, and Redis latency/failure;
 - low-end mobile rendering with 10 players and active effects.
+
+After single-map acceptance, test concurrent map instances and bounded transfer
+traffic. Do not multiply content volume before the engine, asset, and realtime
+budgets are proven.
 
 Measure:
 
@@ -188,9 +227,10 @@ preserved only by unbounded queues, hidden errors, or client authority.
 
 ## Dynamic Content And Admin
 
-Maps, monsters, bosses, items, rewards, announcements, events, animation
-manifests, and audio references are published data. Stable engine rules remain
-code-owned.
+World graph, maps, heroes, skill presentation, NPCs, quests, monsters, boss
+schedules, items, rewards, announcements, events, animation manifests, and
+audio references are published data. Stable engine and economy-integrity rules
+remain code-owned.
 
 Admin implementation is separately approved and must support:
 
@@ -216,7 +256,8 @@ Later approval checkpoints:
 | CDN | Production asset delivery | Public asset base and cache policy |
 | Licensed/generated audio | Audio production | Provider/license records; API key only if an approved provider requires it |
 | AI asset drafts | Content production tooling | Approved provider/model configuration |
-| Realtime load testing | Phase 5.3/5.8 | Isolated test environment endpoints and credentials |
+| Realtime load testing | Phase 5.3/5.10 | Isolated test environment endpoints and credentials |
+| Payment | Dedicated Game Economy/Payment phase | PayOS credentials and webhook secret |
 
 Values must never be requested before their approved phase or committed to the
 repository.
@@ -231,11 +272,14 @@ repository.
   attack.
 - Do not synchronize all 15 Khu to every client.
 - Do not use a moving PNG as the final character, monster, or boss animation.
+- Do not use a static background with one global transform as the final map.
 - Do not let decorative motion obscure telegraphs or overload low-end devices.
 - Do not accept client damage, position, cooldown, drop, or reward facts.
 - Do not let channel switching duplicate presence, combat, or rewards.
 - Do not let chat or slow clients block the combat path.
 - Do not mutate active instances when content is published or rolled back.
+- Do not sell uncapped exclusive combat strength or mutate balances from the
+  realtime path.
 - Do not introduce audio, asset-provider, WebSocket, Redis, or schema changes
   without the required owner approval.
 

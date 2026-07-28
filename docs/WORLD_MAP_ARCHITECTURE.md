@@ -7,9 +7,46 @@ architecture guidance only. It does not approve migrations, APIs, WebSocket
 handlers, Redis scripts, Phaser scenes, monsters, combat formulas, production
 assets, audio, or Admin implementation.
 
-TitanCore is a shared realtime adventure map, not a sequence of isolated boss
-menus. Players explore, meet other players, fight ordinary monsters, move
-between areas, and react when a boss appears.
+TitanCore is a chain of connected realtime hunting worlds, not a sequence of
+isolated boss menus. Players explore, meet other players, fight populations of
+ordinary monsters, move between areas and worlds, and react when a scheduled
+boss appears.
+
+## Connected Hunt Worlds
+
+The Raid Camp is the safe central hub. A Core Gate enters a published hunting
+world. World Gates inside that world lead to other eligible worlds without
+returning to a boss-selection menu.
+
+Each world owns a coherent content set:
+
+- narrative chapter and environmental premise;
+- map topology, ambience, music, and visual language;
+- multiple ordinary monster types and many active monster instances;
+- elite monsters or future mini-bosses where approved;
+- one primary scheduled boss definition;
+- NPC cast, quests, resources, items, and rewards;
+- World Gates and server-owned progression requirements.
+
+The world graph is published, versioned data. React and Phaser may render only
+registered destinations and interactions; remote content cannot inject routes,
+commands, permissions, scripts, or combat rules.
+
+Map transition is an in-world action:
+
+```text
+approach World Gate
+  -> inspect destination and requirements
+  -> server validates account, hero, progression, and destination capacity
+  -> reserve destination Khu
+  -> preload the pinned critical manifest
+  -> transfer authority
+  -> reconcile the destination snapshot
+  -> enable intentions
+```
+
+The client cannot claim that a world is unlocked. A failed transfer leaves the
+player safely in the source world or returns to a recoverable route.
 
 ## Approved World Model
 
@@ -93,16 +130,20 @@ during transfer.
 The exact cooldown duration and portal animation are deferred to measured
 gameplay tuning. The rule itself is server-owned.
 
-## Boss Presence
+## Boss Schedule And Presence
 
 At most one Khu in a map instance hosts the active map boss.
 
 - Boss selection and spawn are server-authoritative.
+- A boss has a configured warning window, active window, despawn policy, and
+  next eligible spawn rule.
 - Every Khu receives a map-wide system announcement naming the boss Khu.
 - Only players admitted to that Khu receive its full boss state.
 - A full boss Khu has no queue in the MVP.
 - Players who cannot enter continue ordinary monster play elsewhere.
 - Boss defeat and reward finalization remain durable and idempotent.
+- Boss absence never stops ordinary hunting, NPC interaction, exploration, or
+  world progression that does not explicitly require that encounter.
 
 A boss announcement is informational, not a reservation. The UI must state
 when the destination becomes full without implying that entry is guaranteed.
@@ -111,20 +152,45 @@ Boss state uses a boss encounter identity separate from the channel identity.
 This allows one Khu to host successive encounters without reusing stale keys or
 sequences.
 
-## Ordinary Monsters
+## Monster Ecology
 
 Every Khu can host ordinary monsters independently of the boss:
 
 - spawn definitions come from pinned, published content;
+- each map supports multiple monster types and many simultaneous instances;
+- spawn groups define habitat, population budget, locations, and respawn policy;
 - spawn ownership, health, despawn, and rewards are server-authoritative;
 - clients send intentions and render interpolated results;
 - a monster entity has a Khu-scoped runtime ID and generation;
 - inactive or empty Khu may use reduced simulation frequency;
+- simulation and network relevance are reduced for entities far from every
+  player without changing durable reward facts;
 - deterministic or server-recorded spawn seeds support diagnosis without
   making the client authoritative.
 
 Exact monster families, statistics, skills, drop tables, pathfinding, and spawn
 rates require later gameplay and content approval.
+
+One animated monster type in the first production proof validates the pipeline;
+it is not the intended population of a released map. A mature world may contain
+several ordinary types, elite variants, and many active instances, subject to
+measured simulation and rendering budgets.
+
+## World Progression
+
+World access uses a soft progression gate:
+
+- mandatory narrative or discovery milestones may be required;
+- a recommended hero power level is shown clearly;
+- specific story artifacts may unlock a gate;
+- ordinary equipment is not restricted to one mandatory random drop;
+- free players can earn every gameplay-required unlock;
+- the server validates all requirements in one consistent policy.
+
+Players may revisit unlocked worlds to hunt, help friends, complete quests, or
+farm materials. Revisiting does not reset earned progression. Exact levels,
+quest rules, power formulas, and item requirements require the dedicated
+Progression and Game Economy design.
 
 ## Realtime Visibility
 
@@ -195,6 +261,8 @@ damage, targeting, cooldown, spawn, or reward state.
 
 Each motion family has an independent quality tier. Low-end devices remove
 decorative particles and distant motion before reducing gameplay readability.
+The complete motion and quality contract is defined in
+`LIVING_WORLD_PRESENTATION.md`.
 
 ## Loading And Entry
 
@@ -232,8 +300,9 @@ monster and movement frames.
 
 ## Data And Admin Boundary
 
-Published map, monster, boss, item, reward, announcement, and asset definitions
-are data-driven and versioned. Code owns:
+Published world graph, map, monster, boss schedule, NPC, quest, hero, skill
+presentation, item, reward, announcement, and asset definitions are data-driven
+and versioned. Code owns:
 
 - entity/component registries;
 - validation and security boundaries;
