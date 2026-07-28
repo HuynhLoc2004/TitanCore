@@ -121,6 +121,69 @@ Publishing rules:
 - Published content changes must not mutate active Redis battle state directly.
 - New or changed boss definitions apply only to newly created battle rooms unless a later emergency operation is explicitly approved.
 
+### World Encounter And Population Operations
+
+Future Content Admin and LiveOps tooling must manage world encounters as
+versioned data rather than hardcoded UI or runtime constants.
+
+Boss operations include:
+
+- create, edit, review, archive, and roll back boss definitions;
+- assign approved bosses to compatible maps and encounter slots;
+- configure health, phases, skills, warning window, spawn schedule, active
+  window, despawn policy, and next-eligible-spawn rule;
+- configure reviewed loot tables with item references, quantity bounds,
+  eligibility rules, and bounded drop probabilities;
+- preview the effective boss, map, asset, audio, and reward version set before
+  publication.
+
+Monster and spawn operations include:
+
+- create and archive ordinary monster and elite definitions;
+- assign multiple monster types to map habitats and spawn groups;
+- configure per-group population budget, minimum and maximum active count,
+  spawn locations, respawn delay, and bounded density;
+- validate aggregate Khu and map budgets before publication;
+- preview low-end rendering and server simulation impact before increasing
+  populations.
+
+Operational safeguards:
+
+- HP, combat statistics, spawn populations, schedules, and loot probabilities
+  use validated bounds owned by backend policy.
+- Loot probabilities use a canonical deterministic representation and must
+  reject invalid, negative, over-100-percent, or ambiguous totals.
+- Draft review shows the delta from the currently published version and an
+  impact summary for encounter difficulty, simulation load, and reward
+  economy.
+- Boss HP, loot, or spawn changes require step-up authentication at publish
+  time and an immutable audit record containing before/after version IDs.
+- Publishing never edits an active encounter, monster instance, Redis key, or
+  already finalized reward.
+- A running map instance keeps its pinned content version. A new version takes
+  effect only for a newly created map instance or a later spawn boundary
+  explicitly supported by the approved runtime contract.
+- Emergency disable may prevent future spawns or admissions, but it must not
+  rewrite combat state or revoke already confirmed rewards.
+
+Suggested future permissions are intentionally narrower than broad content
+administration:
+
+```text
+content.boss.write
+content.monster.write
+content.spawn.write
+content.loot.write
+content.encounter.review
+content.encounter.publish
+content.encounter.rollback
+liveops.encounter.emergency_toggle
+```
+
+These are architecture proposals only. They do not approve migrations, APIs,
+Admin UI, combat formulas, content seeds, or runtime configuration
+implementation.
+
 ## AI-Generated Content Approval
 
 AI never runs inside gameplay.
