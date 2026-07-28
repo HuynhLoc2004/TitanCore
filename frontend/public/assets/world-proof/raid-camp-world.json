@@ -120,6 +120,22 @@
       "critical": true
     },
     {
+      "key": "core-raider-attack",
+      "kind": "SPRITESHEET",
+      "url": "/assets/animation-proof/core-raider-proof.png",
+      "frameWidth": 443,
+      "frameHeight": 443,
+      "critical": true
+    },
+    {
+      "key": "core-slash-effect",
+      "kind": "SPRITESHEET",
+      "url": "/assets/animation-proof/core-slash-proof.png",
+      "frameWidth": 384,
+      "frameHeight": 341,
+      "critical": true
+    },
+    {
       "key": "core-sprout",
       "kind": "SPRITESHEET",
       "url": "/assets/animation-proof/core-sprout-proof.png",
@@ -193,7 +209,7 @@
       "id": "sprout-proof-1",
       "kind": "MONSTER",
       "assetKey": "core-sprout",
-      "x": 1160,
+      "x": 850,
       "y": 620,
       "frame": 0,
       "scale": 0.22,
@@ -203,7 +219,7 @@
       "id": "sprout-proof-2",
       "kind": "MONSTER",
       "assetKey": "core-sprout",
-      "x": 1420,
+      "x": 1180,
       "y": 590,
       "frame": 1,
       "scale": 0.22,
@@ -213,7 +229,7 @@
       "id": "sprout-proof-3",
       "kind": "MONSTER",
       "assetKey": "core-sprout",
-      "x": 1760,
+      "x": 1540,
       "y": 625,
       "frame": 2,
       "scale": 0.22,

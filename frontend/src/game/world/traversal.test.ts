@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WorldElevationZoneDefinition } from './manifest';
-import { approachElevation, sampleElevation } from './traversal';
+import { approachElevation, perspectiveScale, sampleElevation } from './traversal';
 
 const zone: WorldElevationZoneDefinition = {
   id: 'wind-lift',
@@ -33,5 +33,15 @@ describe('2.5D traversal elevation', () => {
     expect(approachElevation(0, 80, 100)).toBe(26);
     expect(approachElevation(76, 80, 100)).toBe(80);
     expect(approachElevation(40, 0, 100)).toBe(14);
+  });
+});
+
+describe('perspectiveScale', () => {
+  it('makes foreground actors larger without exceeding its bounded range', () => {
+    expect(perspectiveScale(420, 420, 680)).toBeCloseTo(0.86);
+    expect(perspectiveScale(550, 420, 680)).toBeCloseTo(0.97);
+    expect(perspectiveScale(680, 420, 680)).toBeCloseTo(1.08);
+    expect(perspectiveScale(200, 420, 680)).toBeCloseTo(0.86);
+    expect(perspectiveScale(900, 420, 680)).toBeCloseTo(1.08);
   });
 });

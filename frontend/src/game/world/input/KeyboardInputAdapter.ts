@@ -16,6 +16,7 @@ type MovementKeys = {
   THREE: Phaser.Input.Keyboard.Key;
   FOUR: Phaser.Input.Keyboard.Key;
   E: Phaser.Input.Keyboard.Key;
+  F: Phaser.Input.Keyboard.Key;
 };
 
 export class KeyboardInputAdapter {
@@ -42,6 +43,7 @@ export class KeyboardInputAdapter {
       THREE: Phaser.Input.Keyboard.KeyCodes.THREE,
       FOUR: Phaser.Input.Keyboard.KeyCodes.FOUR,
       E: Phaser.Input.Keyboard.KeyCodes.E,
+      F: Phaser.Input.Keyboard.KeyCodes.F,
     }) as MovementKeys;
     window.addEventListener('blur', this.release);
   }
@@ -58,6 +60,7 @@ export class KeyboardInputAdapter {
     this.input.setAction('KEYBOARD', 'SKILL_3', this.keys.THREE.isDown);
     this.input.setAction('KEYBOARD', 'SKILL_4', this.keys.FOUR.isDown);
     this.input.setAction('KEYBOARD', 'INTERACT', this.keys.E.isDown);
+    this.input.setAction('KEYBOARD', 'ATTACK', this.keys.F.isDown);
   }
 
   destroy() {

@@ -32,6 +32,18 @@ export function approachElevation(
   return current + Math.sign(target - current) * maximumStep;
 }
 
+export function perspectiveScale(
+  y: number,
+  minY: number,
+  maxY: number,
+  nearScale = 1.08,
+  farScale = 0.86,
+) {
+  if (maxY <= minY) return 1;
+  const progress = Math.min(1, Math.max(0, (y - minY) / (maxY - minY)));
+  return farScale + (nearScale - farScale) * progress;
+}
+
 function contains(
   zone: Pick<WorldElevationZoneDefinition, 'x' | 'y' | 'width' | 'height'>,
   x: number,
