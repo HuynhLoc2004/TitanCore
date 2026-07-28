@@ -1,0 +1,98 @@
+{
+  "status": "HUMAN_REVIEW_REQUIRED",
+  "runtimeApproved": false,
+  "designSpace": {
+    "width": 1280,
+    "height": 720,
+    "mobileOrientation": "LANDSCAPE"
+  },
+  "pivotPolicy": {
+    "characters": "BOTTOM_CENTER_GROUND",
+    "effects": "CENTER_CONTACT_POINT",
+    "authority": "VISUAL_ONLY"
+  },
+  "sequences": [
+    {
+      "key": "core-raider.basic-attack.direction-v1",
+      "file": "core-raider-basic-attack-review.png",
+      "grid": {
+        "columns": 4,
+        "rows": 2,
+        "frameCount": 8
+      },
+      "beats": [
+        "IDLE",
+        "ANTICIPATION_CROUCH",
+        "DRAW_BACK",
+        "FORWARD_STEP",
+        "ACTIVE_SLASH",
+        "FOLLOW_THROUGH",
+        "SCARF_OVERSHOOT",
+        "RECOVERY"
+      ],
+      "previewFrameDurationMs": {
+        "minimum": 70,
+        "maximum": 140
+      }
+    },
+    {
+      "key": "rubber-duck-king.hammer-slam.direction-v1",
+      "file": "rubber-duck-king-hammer-slam-review.png",
+      "grid": {
+        "columns": 4,
+        "rows": 2,
+        "frameCount": 8
+      },
+      "beats": [
+        "HEAVY_IDLE",
+        "CROWN_RATTLE_ANTICIPATION",
+        "HAMMER_DRAW_BACK",
+        "OVERHEAD_TELEGRAPH",
+        "ACTIVE_SLAM",
+        "SQUASHED_IMPACT",
+        "COMEDIC_OVERSHOOT",
+        "RECOVERY"
+      ],
+      "previewFrameDurationMs": {
+        "minimum": 90,
+        "maximum": 180
+      }
+    },
+    {
+      "key": "core-slash.effect.direction-v1",
+      "file": "core-slash-vfx-review.png",
+      "grid": {
+        "columns": 4,
+        "rows": 3,
+        "frameCount": 12
+      },
+      "beats": [
+        "GATHER_1",
+        "GATHER_2",
+        "GATHER_3",
+        "GATHER_4",
+        "SLASH_1",
+        "SLASH_2",
+        "SLASH_3",
+        "CONTACT",
+        "IMPACT",
+        "DECAY_1",
+        "DECAY_2",
+        "DECAY_3"
+      ],
+      "previewFrameDurationMs": {
+        "minimum": 45,
+        "maximum": 90
+      }
+    }
+  ],
+  "guardrails": {
+    "serverAuthoritativeCombat": true,
+    "visualFramesDefineHitTiming": false,
+    "audioRequiredForReadability": false,
+    "mobileAtlasMaximum": 2048,
+    "productionCleanupRequired": true,
+    "alphaExtractionRequired": true,
+    "humanApprovalRequired": true
+  }
+}
