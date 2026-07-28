@@ -122,7 +122,7 @@ describe('auth routes', () => {
 
     renderApp('/app');
 
-    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /ready, hero/i })).toBeInTheDocument();
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });
@@ -166,7 +166,7 @@ describe('auth routes', () => {
     });
 
     renderApp('/app');
-    await screen.findByRole('heading', { name: /welcome back, hero/i });
+    await screen.findByRole('heading', { name: /ready, hero/i });
     await userEvent.click(screen.getByRole('button', { name: /log out/i }));
 
     await waitFor(() => expect(screen.getByRole('heading', { name: /enter the camp/i })).toBeInTheDocument());
@@ -197,7 +197,7 @@ describe('auth routes', () => {
 
     await waitFor(() => expect(window.location.pathname).toBe('/app'));
     expect(screen.queryByRole('heading', { name: /enter the camp/i })).not.toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /ready, hero/i })).toBeInTheDocument();
   });
 
   it('does not render the registration form for an authenticated user on a public register route', async () => {
@@ -224,7 +224,7 @@ describe('auth routes', () => {
 
     await waitFor(() => expect(window.location.pathname).toBe('/app'));
     expect(screen.queryByRole('heading', { name: /forge your banner/i })).not.toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /ready, hero/i })).toBeInTheDocument();
   });
 
   it('renders only the loading shell while bootstrap is pending', async () => {
@@ -243,7 +243,7 @@ describe('auth routes', () => {
     renderApp('/app');
 
     expect(screen.getByRole('status')).toHaveTextContent(/checking your raid pass/i);
-    expect(screen.queryByRole('heading', { name: /welcome back/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /ready/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /enter the camp/i })).not.toBeInTheDocument();
   });
 
@@ -261,7 +261,7 @@ describe('auth routes', () => {
       renderApp('/app', true);
       expect(await screen.findByRole('heading', { name: /choose your raid name/i })).toBeInTheDocument();
       expect(window.location.pathname).toBe('/onboarding');
-      expect(renderedText.some((text) => /raid lobby online|welcome back/i.test(text))).toBe(false);
+      expect(renderedText.some((text) => /the portal is awake|ready,/i.test(text))).toBe(false);
       expect(navigationCount).toBe(1);
     } finally {
       observer.disconnect();
@@ -277,7 +277,7 @@ describe('auth routes', () => {
     try {
       renderApp('/inventory');
       expect(await screen.findByRole('heading', { name: /choose your raid name/i })).toBeInTheDocument();
-      expect(renderedText.some((text) => /raid lobby online|welcome back/i.test(text))).toBe(false);
+      expect(renderedText.some((text) => /the portal is awake|ready,/i.test(text))).toBe(false);
     } finally {
       observer.disconnect();
     }
@@ -287,7 +287,7 @@ describe('auth routes', () => {
     installSessionFor(user);
     renderApp('/onboarding');
 
-    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /ready, hero/i })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /choose your raid name/i })).not.toBeInTheDocument();
     expect(window.location.pathname).toBe('/app');
   });
@@ -298,7 +298,7 @@ describe('auth routes', () => {
     renderApp('/auth/oauth/callback?oauth=success&code=do-not-read&state=do-not-read');
 
     expect(screen.getByRole('status')).toHaveTextContent(/restoring your raid pass/i);
-    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /ready, hero/i })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/app');
     expect(window.location.search).toBe('');
     expect(counts()).toEqual({ refreshCount: 1, meCount: 1 });
@@ -317,8 +317,8 @@ describe('auth routes', () => {
     try {
       renderApp('/auth/oauth/callback?oauth=success', true);
 
-      expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
-      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      expect(await screen.findByRole('heading', { name: /ready, hero/i })).toBeInTheDocument();
+      expect(screen.queryByText(/restoring your raid pass/i)).not.toBeInTheDocument();
       expect(window.location.pathname).toBe('/app');
       expect(window.location.search).toBe('');
       expect(navigationCount).toBe(1);
@@ -363,7 +363,7 @@ describe('auth routes', () => {
 
     renderApp('/auth/oauth/callback?oauth=success&access_token=url-value&refresh_token=url-value&id_token=url-value');
 
-    expect(await screen.findByRole('heading', { name: /welcome back, hero/i })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /ready, hero/i })).toBeInTheDocument();
     expect(window.location.href).not.toContain('url-value');
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
