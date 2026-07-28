@@ -8,11 +8,13 @@ import type {
 import { BootScene } from './scenes/BootScene';
 import { LocalWorldScene } from './scenes/LocalWorldScene';
 import { PreloadScene } from './scenes/PreloadScene';
+import type { UnifiedInputState } from './input/UnifiedInputState';
 
 export type CreateWorldRuntimeOptions = {
   parent: HTMLElement;
   manifestUrl: string;
   reducedMotion: boolean;
+  inputState: UnifiedInputState;
   onStatus: (status: WorldRuntimeStatus) => void;
   onMetrics: (metrics: WorldRuntimeMetrics) => void;
   onReady: () => void;
@@ -23,6 +25,7 @@ export function createWorldRuntime({
   parent,
   manifestUrl,
   reducedMotion,
+  inputState,
   onStatus,
   onMetrics,
   onReady,
@@ -65,6 +68,7 @@ export function createWorldRuntime({
       postBoot: (bootedGame) => {
         bootedGame.registry.set('manifestUrl', manifestUrl);
         bootedGame.registry.set('reducedMotion', reducedMotion);
+        bootedGame.registry.set('inputState', inputState);
         bootedGame.registry.set('qualityTier', quality);
         bootedGame.registry.set('onStatus', onStatus);
         bootedGame.registry.set('onMetrics', onMetrics);

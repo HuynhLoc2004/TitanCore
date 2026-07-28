@@ -2,11 +2,13 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorldRuntimeHost } from './WorldRuntimeHost';
+import { UnifiedInputState } from './world/input/UnifiedInputState';
 
 const destroy = vi.fn();
 const setReducedMotion = vi.fn();
 const create = vi.fn();
 const loadRenderer = vi.fn(async () => create);
+const inputState = new UnifiedInputState();
 
 describe('WorldRuntimeHost', () => {
   afterEach(() => {
@@ -24,6 +26,7 @@ describe('WorldRuntimeHost', () => {
         <WorldRuntimeHost
           manifestUrl="/assets/test/world.json"
           reducedMotion={false}
+          inputState={inputState}
           retryGeneration={0}
           onStatus={vi.fn()}
           onMetrics={vi.fn()}
@@ -46,6 +49,7 @@ describe('WorldRuntimeHost', () => {
       <WorldRuntimeHost
         manifestUrl="/assets/test/world.json"
         reducedMotion={false}
+        inputState={inputState}
         retryGeneration={0}
         onStatus={onStatus}
         onMetrics={vi.fn()}

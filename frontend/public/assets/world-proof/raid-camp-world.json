@@ -7,6 +7,12 @@
     "height": 720,
     "backgroundColor": "#090b18"
   },
+  "navigation": {
+    "minY": 420,
+    "maxY": 680,
+    "moveSpeed": 260,
+    "cameraLerp": 0.09
+  },
   "regions": [
     {
       "id": "camp-gate",
