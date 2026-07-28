@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "world": {
+    "id": "raid-camp-runtime-proof",
+    "version": 1,
+    "width": 5120,
+    "height": 720,
+    "backgroundColor": "#090b18"
+  },
+  "regions": [
+    {
+      "id": "camp-gate",
+      "kind": "SAFE_HUB",
+      "startX": 0,
+      "endX": 1000
+    },
+    {
+      "id": "sprout-trail",
+      "kind": "HUNTING",
+      "startX": 1000,
+      "endX": 2450
+    },
+    {
+      "id": "windmill-crossing",
+      "kind": "EVENT",
+      "startX": 2450,
+      "endX": 3500
+    },
+    {
+      "id": "duck-king-causeway",
+      "kind": "BOSS",
+      "startX": 3500,
+      "endX": 4700
+    },
+    {
+      "id": "east-core-gate",
+      "kind": "EXIT_GATE",
+      "startX": 4700,
+      "endX": 5120
+    }
+  ],
+  "assets": [
+    {
+      "key": "raid-camp-background",
+      "kind": "IMAGE",
+      "url": "/assets/raid-camp/raid-camp-desktop.jpg",
+      "critical": true
+    },
+    {
+      "key": "core-raider",
+      "kind": "SPRITESHEET",
+      "url": "/assets/animation-proof/core-raider-proof.png",
+      "frameWidth": 443,
+      "frameHeight": 443,
+      "critical": true
+    },
+    {
+      "key": "core-sprout",
+      "kind": "SPRITESHEET",
+      "url": "/assets/animation-proof/core-sprout-proof.png",
+      "frameWidth": 443,
+      "frameHeight": 443,
+      "critical": true
+    }
+  ],
+  "layers": [
+    {
+      "id": "camp-background",
+      "assetKey": "raid-camp-background",
+      "depth": -100,
+      "x": 640,
+      "y": 360,
+      "width": 1280,
+      "height": 720,
+      "scrollFactorX": 1,
+      "scrollFactorY": 1,
+      "flipX": false
+    },
+    {
+      "id": "sprout-trail-background",
+      "assetKey": "raid-camp-background",
+      "depth": -100,
+      "x": 1920,
+      "y": 360,
+      "width": 1280,
+      "height": 720,
+      "scrollFactorX": 1,
+      "scrollFactorY": 1,
+      "flipX": true
+    },
+    {
+      "id": "windmill-background",
+      "assetKey": "raid-camp-background",
+      "depth": -100,
+      "x": 3200,
+      "y": 360,
+      "width": 1280,
+      "height": 720,
+      "scrollFactorX": 1,
+      "scrollFactorY": 1,
+      "flipX": false
+    },
+    {
+      "id": "causeway-background",
+      "assetKey": "raid-camp-background",
+      "depth": -100,
+      "x": 4480,
+      "y": 360,
+      "width": 1280,
+      "height": 720,
+      "scrollFactorX": 1,
+      "scrollFactorY": 1,
+      "flipX": true
+    }
+  ],
+  "entities": [
+    {
+      "id": "local-hero-proof",
+      "kind": "HERO",
+      "assetKey": "core-raider",
+      "x": 620,
+      "y": 610,
+      "frame": 0,
+      "scale": 0.42,
+      "depth": 20
+    },
+    {
+      "id": "sprout-proof-1",
+      "kind": "MONSTER",
+      "assetKey": "core-sprout",
+      "x": 1160,
+      "y": 620,
+      "frame": 0,
+      "scale": 0.22,
+      "depth": 18
+    },
+    {
+      "id": "sprout-proof-2",
+      "kind": "MONSTER",
+      "assetKey": "core-sprout",
+      "x": 1420,
+      "y": 590,
+      "frame": 1,
+      "scale": 0.22,
+      "depth": 17
+    },
+    {
+      "id": "sprout-proof-3",
+      "kind": "MONSTER",
+      "assetKey": "core-sprout",
+      "x": 1760,
+      "y": 625,
+      "frame": 2,
+      "scale": 0.22,
+      "depth": 19
+    }
+  ],
+  "ambient": {
+    "cloudCount": 7,
+    "emberCount": 24,
+    "windCycleMs": 24000
+  }
+}

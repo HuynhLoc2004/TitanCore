@@ -9,6 +9,9 @@ import { AppRoutes, navigate } from './AppRoutes';
 vi.mock('../game/AnimationLabPage', () => ({
   AnimationLabPage: () => <h1>Motion Forge</h1>,
 }));
+vi.mock('../game/WorldRuntimePage', () => ({
+  WorldRuntimePage: () => <h1>Raid Camp Local Khu</h1>,
+}));
 
 const user = {
   id: '3d2c4040-66f6-45b7-9235-1d5d7a4d4586',
@@ -169,6 +172,41 @@ describe('auth routes', () => {
     expect(await screen.findByRole('heading', { name: /enter the camp/i })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /motion forge/i })).not.toBeInTheDocument();
     expect(window.location.pathname).toBe('/login');
+  });
+
+  it('protects the local world runtime behind authentication and onboarding', async () => {
+    installSessionFor(user);
+    renderApp('/world-lab');
+
+    expect(await screen.findByRole('heading', { name: /raid camp local khu/i }))
+      .toBeInTheDocument();
+    expect(window.location.pathname).toBe('/world-lab');
+  });
+
+  it('does not initialize the local world runtime for an anonymous player', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/world-lab');
+
+    expect(await screen.findByRole('heading', { name: /enter the camp/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /raid camp local khu/i })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('sends an incomplete player to onboarding before the local world runtime', async () => {
+    installSessionFor(incompleteUser);
+    renderApp('/world-lab');
+
+    expect(await screen.findByRole('heading', { name: /choose your raid name/i }))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /raid camp local khu/i })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/onboarding');
   });
 
   it('clears the authenticated shell after logout', async () => {

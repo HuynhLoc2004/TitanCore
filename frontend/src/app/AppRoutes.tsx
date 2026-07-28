@@ -9,6 +9,9 @@ import { LobbyPage } from '../lobby/LobbyPage';
 const AnimationLabPage = lazy(() => import('../game/AnimationLabPage').then((module) => ({
   default: module.AnimationLabPage,
 })));
+const WorldRuntimePage = lazy(() => import('../game/WorldRuntimePage').then((module) => ({
+  default: module.WorldRuntimePage,
+})));
 
 type Route =
   | '/login'
@@ -16,6 +19,7 @@ type Route =
   | '/onboarding'
   | '/app'
   | '/animation-lab'
+  | '/world-lab'
   | '/auth/oauth/callback';
 
 function currentRoute(): Route {
@@ -31,6 +35,9 @@ function currentRoute(): Route {
   }
   if (path === '/animation-lab') {
     return '/animation-lab';
+  }
+  if (path === '/world-lab') {
+    return '/world-lab';
   }
   if (path === '/onboarding') {
     return '/onboarding';
@@ -60,7 +67,7 @@ export function AppRoutes() {
 
   useEffect(() => {
     if (status === 'authenticated' && user && route !== '/auth/oauth/callback') {
-      const completedRoute = route === '/app' || route === '/animation-lab';
+      const completedRoute = isCompletedProfileRoute(route);
       const destination = user.profile.onboardingStatus === 'REQUIRED'
         ? '/onboarding'
         : completedRoute ? route : '/app';
@@ -71,7 +78,10 @@ export function AppRoutes() {
       }
     }
     if (status === 'anonymous'
-        && (route === '/app' || route === '/onboarding' || route === '/animation-lab')) {
+        && (route === '/app'
+          || route === '/onboarding'
+          || route === '/animation-lab'
+          || route === '/world-lab')) {
       const redirectKey = `${route}:/login`;
       if (redirectRef.current !== redirectKey) {
         redirectRef.current = redirectKey;
@@ -80,12 +90,13 @@ export function AppRoutes() {
     }
     const authenticatedDestination = user?.profile.onboardingStatus === 'REQUIRED'
       ? route === '/onboarding'
-      : route === '/app' || route === '/animation-lab';
+      : isCompletedProfileRoute(route);
     if ((status === 'authenticated' && user && authenticatedDestination)
         || (status === 'anonymous'
           && route !== '/app'
           && route !== '/onboarding'
-          && route !== '/animation-lab')) {
+          && route !== '/animation-lab'
+          && route !== '/world-lab')) {
       redirectRef.current = null;
     }
   }, [route, status, user]);
@@ -102,7 +113,7 @@ export function AppRoutes() {
     if (user.profile.onboardingStatus === 'REQUIRED') {
       return route === '/onboarding' ? <ProfileOnboardingPage /> : <RedirectingScreen />;
     }
-    if (route !== '/app' && route !== '/animation-lab') {
+    if (!isCompletedProfileRoute(route)) {
       return <RedirectingScreen />;
     }
   }
@@ -123,7 +134,19 @@ export function AppRoutes() {
     );
   }
 
+  if (route === '/world-lab' && status === 'authenticated' && user) {
+    return (
+      <Suspense fallback={<WorldRuntimeLoadingScreen />}>
+        <WorldRuntimePage />
+      </Suspense>
+    );
+  }
+
   return <LoginPage onRegister={() => navigate('/register')} />;
+}
+
+function isCompletedProfileRoute(route: Route) {
+  return route === '/app' || route === '/animation-lab' || route === '/world-lab';
 }
 
 function AnimationLabLoadingScreen() {
@@ -134,6 +157,20 @@ function AnimationLabLoadingScreen() {
           <div className="tc-loader-token" aria-hidden="true" />
           <p className="tc-eyebrow">Motion Forge</p>
           <h1>Loading the animation proof</h1>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function WorldRuntimeLoadingScreen() {
+  return (
+    <main className="min-h-screen bg-[var(--tc-bg)] text-white">
+      <section className="tc-shell tc-center">
+        <div className="tc-loader-card" role="status" aria-live="polite">
+          <div className="tc-loader-token" aria-hidden="true" />
+          <p className="tc-eyebrow">Local Khu</p>
+          <h1>Preparing the world runtime</h1>
         </div>
       </section>
     </main>
