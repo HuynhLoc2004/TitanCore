@@ -4,6 +4,7 @@ import { OAuthCallbackPage } from '../auth/pages/OAuthCallbackPage';
 import { RegisterPage } from '../auth/pages/RegisterPage';
 import { useAuth } from '../auth/useAuth';
 import { ProfileOnboardingPage } from '../player/pages/ProfileOnboardingPage';
+import { LobbyPage } from '../lobby/LobbyPage';
 
 type Route = '/login' | '/register' | '/onboarding' | '/app' | '/auth/oauth/callback';
 
@@ -89,30 +90,7 @@ export function AppRoutes() {
   }
 
   if (route === '/app' && status === 'authenticated' && user) {
-    return (
-      <main className="min-h-screen overflow-hidden bg-[var(--tc-bg)] text-white">
-        <section className="tc-shell">
-          <div className="tc-stars" aria-hidden="true" />
-          <div className="tc-dashboard">
-            <div>
-              <p className="tc-eyebrow">Raid lobby online</p>
-              <h1>Welcome back, {user.profile.displayName}</h1>
-              <p>
-                Your war banner is ready. The boss room opens in the next approved gameplay phase.
-              </p>
-            </div>
-            <div className="tc-player-card">
-              <span>{user.role}</span>
-              <strong>{user.status}</strong>
-              <p>{user.email}</p>
-            </div>
-            <button className="tc-button tc-button-secondary" type="button" onClick={() => void logout()}>
-              Log out
-            </button>
-          </div>
-        </section>
-      </main>
-    );
+    return <LobbyPage user={user} onLogout={logout} />;
   }
 
   return <LoginPage onRegister={() => navigate('/register')} />;

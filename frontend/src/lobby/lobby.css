@@ -1,0 +1,605 @@
+.tc-raid-camp {
+  --camp-ink: #101827;
+  --camp-paper: #fff8e8;
+  --camp-coral: #f45f50;
+  --camp-gold: #ffc84a;
+  --camp-mint: #69d6b0;
+  --camp-sky: #70c7ef;
+  position: relative;
+  min-height: 100svh;
+  overflow-x: hidden;
+  background: transparent;
+  color: #fff;
+  isolation: isolate;
+}
+
+.tc-raid-camp__scene {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(180deg, rgb(10 18 32 / 12%) 0%, rgb(10 18 32 / 34%) 58%, rgb(10 18 32 / 94%) 100%),
+    url('/assets/raid-camp/raid-camp-desktop.jpg');
+  background-position: center top;
+  background-size: cover;
+}
+
+.tc-raid-camp__scene::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgb(10 18 32 / 46%) 0%, transparent 38%, rgb(10 18 32 / 20%) 100%);
+  content: '';
+}
+
+.tc-skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 50%;
+  z-index: 20;
+  padding: 0.65rem 1rem;
+  transform: translate(-50%, -180%);
+  border: 2px solid var(--camp-ink);
+  background: var(--camp-paper);
+  color: var(--camp-ink);
+  font-weight: 900;
+}
+
+.tc-skip-link:focus {
+  transform: translate(-50%, 0);
+}
+
+.tc-camp-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem clamp(1rem, 3vw, 2.5rem);
+  border-bottom: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(11 20 35 / 84%);
+  backdrop-filter: blur(14px);
+  box-sizing: border-box;
+}
+
+.tc-camp-layout {
+  position: relative;
+  z-index: 1;
+}
+
+.tc-camp-brand,
+.tc-camp-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.tc-camp-brand {
+  color: #fff;
+  text-decoration: none;
+}
+
+.tc-camp-brand__mark,
+.tc-camp-identity__avatar {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 2px solid rgb(16 24 39 / 90%);
+  background: var(--camp-gold);
+  box-shadow: 3px 3px 0 var(--camp-ink);
+  color: var(--camp-ink);
+  font-weight: 1000;
+}
+
+.tc-camp-brand strong,
+.tc-camp-brand small,
+.tc-camp-identity strong,
+.tc-camp-identity small {
+  display: block;
+}
+
+.tc-camp-brand strong {
+  font-size: 1.05rem;
+}
+
+.tc-camp-brand small,
+.tc-camp-identity small {
+  color: rgb(255 255 255 / 68%);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.tc-camp-identity__avatar {
+  border-radius: 50%;
+  background: var(--camp-mint);
+}
+
+.tc-camp-identity__copy {
+  min-width: 0;
+}
+
+.tc-camp-identity__copy strong {
+  max-width: min(28vw, 18rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-camp-logout {
+  min-height: 40px;
+  padding: 0.5rem 0.85rem;
+  border: 1px solid rgb(255 255 255 / 28%);
+  background: rgb(10 18 32 / 52%);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.tc-camp-layout {
+  display: grid;
+  width: min(100%, 1600px);
+  min-height: calc(100svh - 72px);
+  margin: 0 auto;
+  grid-template-columns: 104px minmax(0, 1fr);
+}
+
+.tc-camp-nav {
+  position: sticky;
+  top: 72px;
+  display: flex;
+  height: calc(100svh - 72px);
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 1.25rem 0.65rem;
+  border-right: 1px solid rgb(255 255 255 / 12%);
+  background: rgb(11 20 35 / 62%);
+}
+
+.tc-camp-nav__item {
+  display: grid;
+  min-height: 68px;
+  place-items: center;
+  gap: 0.2rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgb(255 255 255 / 66%);
+  font: inherit;
+  text-decoration: none;
+}
+
+.tc-camp-nav__item span {
+  color: var(--camp-gold);
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.tc-camp-nav__item strong {
+  font-size: 0.78rem;
+}
+
+.tc-camp-nav__item.is-active {
+  border-color: rgb(255 200 74 / 55%);
+  background: rgb(255 200 74 / 14%);
+  color: #fff;
+}
+
+.tc-camp-nav__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.tc-camp-content {
+  min-width: 0;
+  padding: clamp(1rem, 3vw, 2.5rem);
+}
+
+.tc-camp-hero {
+  position: relative;
+  display: grid;
+  min-height: clamp(390px, 58vh, 610px);
+  align-items: end;
+  grid-template-columns: minmax(260px, 0.9fr) minmax(300px, 1.1fr);
+}
+
+.tc-camp-hero__copy {
+  z-index: 2;
+  max-width: 650px;
+  padding: clamp(1rem, 3vw, 2.5rem) 0 clamp(2rem, 6vw, 5rem);
+  text-shadow: 0 2px 16px rgb(4 11 21 / 72%);
+}
+
+.tc-camp-kicker {
+  margin: 0 0 0.6rem;
+  color: var(--camp-gold);
+  font-size: 0.78rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.tc-camp-hero h1,
+.tc-camp-band h2,
+.tc-camp-message h2,
+.tc-event-spotlight h2 {
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.tc-camp-hero h1 {
+  max-width: 11ch;
+  font-size: clamp(2.7rem, 5vw, 4.8rem);
+  line-height: 0.98;
+}
+
+.tc-camp-hero__copy > p:not(.tc-camp-kicker) {
+  max-width: 55ch;
+  margin: 1rem 0;
+  color: rgb(255 255 255 / 84%);
+  font-size: clamp(1rem, 1.5vw, 1.18rem);
+  line-height: 1.55;
+}
+
+.tc-camp-hero__status {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgb(255 255 255 / 24%);
+  background: rgb(10 18 32 / 62%);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.tc-camp-hero__status span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--camp-mint);
+  box-shadow: 0 0 0 4px rgb(105 214 176 / 16%);
+}
+
+.tc-camp-hero__stage {
+  position: relative;
+  height: 100%;
+  min-height: 390px;
+}
+
+.tc-camp-hero__raider {
+  position: absolute;
+  right: clamp(-3rem, -1vw, 0rem);
+  bottom: -1.5rem;
+  width: min(100%, 510px);
+  height: auto;
+  filter: drop-shadow(0 28px 30px rgb(5 11 20 / 42%));
+}
+
+.tc-camp-sections {
+  display: grid;
+  gap: 1.5rem;
+  margin: 0 calc(clamp(1rem, 3vw, 2.5rem) * -1);
+  padding: 0 clamp(1rem, 3vw, 2.5rem) 3rem;
+  background: linear-gradient(180deg, rgb(10 18 32 / 80%), rgb(10 18 32 / 97%) 14rem);
+}
+
+.tc-camp-band,
+.tc-event-spotlight,
+.tc-camp-message,
+.tc-camp-skeleton {
+  border-top: 1px solid rgb(255 255 255 / 18%);
+  padding: clamp(1.5rem, 4vw, 3rem) 0;
+}
+
+.tc-camp-band__heading h2,
+.tc-camp-message h2,
+.tc-event-spotlight h2 {
+  font-size: clamp(1.5rem, 3vw, 2.4rem);
+}
+
+.tc-boss-grid {
+  display: grid;
+  margin-top: 1.25rem;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+}
+
+.tc-boss-card {
+  display: grid;
+  min-height: 310px;
+  overflow: hidden;
+  border: 2px solid rgb(16 24 39 / 90%);
+  background: var(--camp-paper);
+  box-shadow: 6px 6px 0 rgb(16 24 39 / 78%);
+  color: var(--camp-ink);
+  grid-template-rows: 140px 1fr;
+}
+
+.tc-boss-card__art {
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 80%, rgb(255 200 74 / 65%), transparent 42%),
+    var(--camp-sky);
+}
+
+.tc-boss-card__art img {
+  width: min(92%, 300px);
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.tc-boss-card > div:last-child {
+  padding: 1rem;
+}
+
+.tc-boss-card span {
+  color: #98541e;
+  font-size: 0.72rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.tc-boss-card h3 {
+  margin: 0.25rem 0 0.4rem;
+  font-size: 1.3rem;
+}
+
+.tc-boss-card p {
+  margin: 0;
+  color: #465061;
+  line-height: 1.45;
+}
+
+.tc-boss-card button,
+.tc-camp-message button {
+  min-height: 42px;
+  margin-top: 1rem;
+  padding: 0.55rem 0.8rem;
+  border: 2px solid var(--camp-ink);
+  background: var(--camp-coral);
+  box-shadow: 3px 3px 0 var(--camp-ink);
+  color: #fff;
+  font: inherit;
+  font-weight: 900;
+}
+
+.tc-boss-card button:disabled {
+  background: #d8d0bf;
+  color: #5e6470;
+  box-shadow: none;
+}
+
+.tc-camp-announcements {
+  display: flex;
+  overflow-x: auto;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  scrollbar-width: thin;
+}
+
+.tc-camp-announcements p,
+.tc-player-summary {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid rgb(255 255 255 / 24%);
+  background: rgb(10 18 32 / 70%);
+}
+
+.tc-event-spotlight {
+  display: grid;
+  align-items: center;
+  gap: 1.5rem;
+  grid-template-columns: minmax(180px, 0.6fr) minmax(260px, 1fr);
+}
+
+.tc-event-spotlight img {
+  width: 100%;
+  max-height: 270px;
+  object-fit: cover;
+}
+
+.tc-player-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tc-player-summary span {
+  color: var(--camp-gold);
+  font-size: 0.75rem;
+  font-weight: 1000;
+  text-transform: uppercase;
+}
+
+.tc-camp-empty,
+.tc-camp-message > p:last-of-type {
+  max-width: 58ch;
+  color: rgb(255 255 255 / 70%);
+  line-height: 1.55;
+}
+
+.tc-camp-skeleton {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: 1.4fr 1fr 1fr;
+}
+
+.tc-camp-skeleton span {
+  height: 190px;
+  background: linear-gradient(110deg, rgb(255 255 255 / 7%) 25%, rgb(255 255 255 / 14%) 40%, rgb(255 255 255 / 7%) 55%);
+  background-size: 220% 100%;
+  animation: tc-camp-shimmer 1.8s linear infinite;
+}
+
+@keyframes tc-camp-shimmer {
+  to { background-position-x: -220%; }
+}
+
+@media (max-width: 760px) {
+  .tc-raid-camp {
+    padding-bottom: 74px;
+  }
+
+  .tc-raid-camp__scene {
+    background-image:
+      linear-gradient(180deg, rgb(10 18 32 / 10%) 0%, rgb(10 18 32 / 55%) 48%, rgb(10 18 32 / 96%) 79%),
+      url('/assets/raid-camp/raid-camp-mobile.jpg');
+    background-position: center top;
+  }
+
+  .tc-camp-header {
+    display: grid;
+    width: 100%;
+    min-height: 64px;
+    padding: 0.55rem 0.8rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .tc-camp-brand {
+    min-width: 0;
+  }
+
+  .tc-camp-brand > span:last-child {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .tc-camp-brand strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tc-camp-identity {
+    width: fit-content;
+    flex: 0 0 auto;
+    gap: 0.35rem;
+    margin-left: auto;
+  }
+
+  .tc-camp-logout {
+    min-height: 38px;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.72rem;
+  }
+
+  .tc-camp-brand__mark,
+  .tc-camp-identity__avatar {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+
+  .tc-camp-brand small,
+  .tc-camp-identity small,
+  .tc-camp-identity__copy {
+    display: none;
+  }
+
+  .tc-camp-layout {
+    display: block;
+    min-height: calc(100svh - 64px);
+  }
+
+  .tc-camp-nav {
+    position: fixed;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 12;
+    display: grid;
+    height: 74px;
+    overflow-x: auto;
+    padding: 0.35rem 0.5rem;
+    border-top: 1px solid rgb(255 255 255 / 18%);
+    border-right: 0;
+    grid-auto-columns: minmax(78px, 1fr);
+    grid-auto-flow: column;
+  }
+
+  .tc-camp-nav__item {
+    min-height: 62px;
+  }
+
+  .tc-camp-content {
+    padding: 0.75rem 1rem 2rem;
+  }
+
+  .tc-camp-hero {
+    min-height: min(640px, calc(100svh - 190px));
+    align-items: end;
+    grid-template-columns: 1fr;
+  }
+
+  .tc-camp-hero__copy {
+    z-index: 2;
+    padding: 18rem 0 1.5rem;
+  }
+
+  .tc-camp-hero h1 {
+    max-width: 9ch;
+    font-size: clamp(2.65rem, 14vw, 4.2rem);
+  }
+
+  .tc-camp-hero__stage {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+  }
+
+  .tc-camp-hero__raider {
+    top: 0;
+    right: -4rem;
+    bottom: auto;
+    width: min(85vw, 390px);
+    max-height: 58vh;
+    object-fit: contain;
+  }
+
+  .tc-camp-skeleton {
+    grid-template-columns: 1fr;
+  }
+
+  .tc-camp-skeleton span {
+    height: 140px;
+  }
+
+  .tc-event-spotlight {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 620px) and (max-width: 760px) {
+  .tc-camp-hero {
+    min-height: 460px;
+  }
+
+  .tc-camp-hero__copy {
+    padding-top: 13rem;
+  }
+
+  .tc-camp-hero__raider {
+    width: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tc-camp-skeleton span {
+    animation: none;
+  }
+
+  .tc-raid-camp *,
+  .tc-raid-camp *::before,
+  .tc-raid-camp *::after {
+    scroll-behavior: auto;
+    transition-duration: 0.01ms;
+  }
+}
