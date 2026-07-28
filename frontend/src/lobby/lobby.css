@@ -5,6 +5,8 @@
   --camp-gold: #ffc84a;
   --camp-mint: #69d6b0;
   --camp-sky: #70c7ef;
+  --camp-pointer-x: 0;
+  --camp-pointer-y: 0;
   position: relative;
   min-height: 100svh;
   overflow-x: hidden;
@@ -22,6 +24,13 @@
     url('/assets/raid-camp/raid-camp-desktop.jpg');
   background-position: center top;
   background-size: cover;
+  transform: translate3d(
+    calc(var(--camp-pointer-x) * -5px),
+    calc(var(--camp-pointer-y) * -3px),
+    0
+  ) scale(1.015);
+  transition: transform 180ms ease-out;
+  will-change: transform;
 }
 
 .tc-raid-camp__scene::after {
@@ -29,6 +38,118 @@
   inset: 0;
   background: linear-gradient(90deg, rgb(10 18 32 / 46%) 0%, transparent 38%, rgb(10 18 32 / 20%) 100%);
   content: '';
+}
+
+.tc-camp-atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tc-camp-portal {
+  position: absolute;
+  top: 38%;
+  left: 67%;
+  width: clamp(84px, 10vw, 150px);
+  aspect-ratio: 0.72;
+  transform:
+    translate3d(
+      calc(-50% + var(--camp-pointer-x) * 6px),
+      calc(-50% + var(--camp-pointer-y) * 4px),
+      0
+    );
+}
+
+.tc-camp-portal__ring,
+.tc-camp-portal__core {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.tc-camp-portal__ring {
+  border: 3px solid rgb(211 163 255 / 72%);
+  box-shadow:
+    0 0 18px rgb(160 94 255 / 72%),
+    inset 0 0 18px rgb(112 199 239 / 62%);
+  animation: tc-portal-breathe 2.8s ease-in-out infinite;
+}
+
+.tc-camp-portal__ring::before,
+.tc-camp-portal__ring::after {
+  position: absolute;
+  border-radius: 50%;
+  content: '';
+}
+
+.tc-camp-portal__ring::before {
+  inset: 10%;
+  border: 2px dashed rgb(255 255 255 / 60%);
+  animation: tc-portal-spin 8s linear infinite;
+}
+
+.tc-camp-portal__ring::after {
+  inset: 23%;
+  border: 1px solid rgb(112 199 239 / 75%);
+  animation: tc-portal-spin 5s linear infinite reverse;
+}
+
+.tc-camp-portal__core {
+  inset: 28% 25%;
+  background: rgb(140 74 255 / 24%);
+  box-shadow: 0 0 30px 12px rgb(148 87 255 / 26%);
+  animation: tc-portal-core 1.9s ease-in-out infinite alternate;
+}
+
+.tc-camp-fire {
+  position: absolute;
+  width: clamp(38px, 4vw, 66px);
+  aspect-ratio: 1;
+  border-radius: 42% 58% 55% 45%;
+  background: rgb(255 156 52 / 28%);
+  box-shadow:
+    0 0 22px 8px rgb(255 120 35 / 34%),
+    0 0 50px 20px rgb(255 200 74 / 14%);
+  animation: tc-fire-flicker 1.25s ease-in-out infinite alternate;
+}
+
+.tc-camp-fire--one {
+  top: 57%;
+  left: 24%;
+}
+
+.tc-camp-fire--two {
+  top: 52%;
+  left: 62%;
+  animation-delay: -0.42s;
+}
+
+.tc-camp-fire--three {
+  top: 56%;
+  left: 72%;
+  animation-delay: -0.81s;
+}
+
+.tc-camp-embers {
+  position: absolute;
+  inset: 42% 12% 10%;
+}
+
+.tc-camp-embers span {
+  --ember-index: 0;
+  position: absolute;
+  bottom: calc((var(--ember-index) % 3) * 7%);
+  left: calc(8% + var(--ember-index) * 8.5%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--camp-gold);
+  box-shadow: 0 0 6px rgb(255 200 74 / 82%);
+  opacity: 0;
+  animation: tc-ember-rise calc(4.6s + (var(--ember-index) % 4) * 0.7s) linear infinite;
+  animation-delay: calc(var(--ember-index) * -0.71s);
 }
 
 .tc-skip-link {
@@ -62,6 +183,7 @@
   background: rgb(11 20 35 / 84%);
   backdrop-filter: blur(14px);
   box-sizing: border-box;
+  animation: tc-camp-enter-top 460ms ease-out both;
 }
 
 .tc-camp-layout {
@@ -158,6 +280,7 @@
   padding: 1.25rem 0.65rem;
   border-right: 1px solid rgb(255 255 255 / 12%);
   background: rgb(11 20 35 / 62%);
+  animation: tc-camp-enter-left 560ms 80ms ease-out both;
 }
 
 .tc-camp-nav__item {
@@ -170,6 +293,11 @@
   color: rgb(255 255 255 / 66%);
   font: inherit;
   text-decoration: none;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
 }
 
 .tc-camp-nav__item span {
@@ -186,6 +314,12 @@
   border-color: rgb(255 200 74 / 55%);
   background: rgb(255 200 74 / 14%);
   color: #fff;
+}
+
+.tc-camp-nav__item:not(:disabled):hover,
+.tc-camp-nav__item:not(:disabled):focus-visible {
+  transform: translateY(-2px);
+  border-color: rgb(255 200 74 / 72%);
 }
 
 .tc-camp-nav__item:disabled {
@@ -211,6 +345,7 @@
   max-width: 650px;
   padding: clamp(1rem, 3vw, 2.5rem) 0 clamp(2rem, 6vw, 5rem);
   text-shadow: 0 2px 16px rgb(4 11 21 / 72%);
+  animation: tc-camp-copy-enter 620ms 130ms ease-out both;
 }
 
 .tc-camp-kicker {
@@ -261,6 +396,7 @@
   border-radius: 50%;
   background: var(--camp-mint);
   box-shadow: 0 0 0 4px rgb(105 214 176 / 16%);
+  animation: tc-signal-pulse 1.8s ease-in-out infinite;
 }
 
 .tc-camp-hero__stage {
@@ -276,6 +412,16 @@
   width: min(100%, 510px);
   height: auto;
   filter: drop-shadow(0 28px 30px rgb(5 11 20 / 42%));
+  transform: translate3d(
+    calc(var(--camp-pointer-x) * 8px),
+    calc(var(--camp-pointer-y) * 5px),
+    0
+  );
+  transform-origin: 50% 88%;
+  animation:
+    tc-raider-enter 720ms 90ms cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    tc-raider-idle 4.8s 900ms ease-in-out infinite;
+  will-change: transform;
 }
 
 .tc-camp-sections {
@@ -316,6 +462,14 @@
   box-shadow: 6px 6px 0 rgb(16 24 39 / 78%);
   color: var(--camp-ink);
   grid-template-rows: 140px 1fr;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.tc-boss-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 9px 11px 0 rgb(16 24 39 / 72%);
 }
 
 .tc-boss-card__art {
@@ -442,6 +596,111 @@
   to { background-position-x: -220%; }
 }
 
+@keyframes tc-portal-spin {
+  to { transform: rotate(1turn); }
+}
+
+@keyframes tc-portal-breathe {
+  0%,
+  100% {
+    opacity: 0.66;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes tc-portal-core {
+  from {
+    opacity: 0.48;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 0.92;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes tc-fire-flicker {
+  from {
+    opacity: 0.48;
+    transform: scale(0.82) rotate(-3deg);
+  }
+  to {
+    opacity: 0.9;
+    transform: scale(1.12) rotate(3deg);
+  }
+}
+
+@keyframes tc-ember-rise {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 15px, 0) scale(0.7);
+  }
+  18% {
+    opacity: 0.82;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(22px, -190px, 0) scale(0.2);
+  }
+}
+
+@keyframes tc-raider-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(70px, 24px, 0) scale(0.96);
+  }
+}
+
+@keyframes tc-raider-idle {
+  0%,
+  100% {
+    transform: translate3d(
+      calc(var(--camp-pointer-x) * 8px),
+      calc(var(--camp-pointer-y) * 5px),
+      0
+    ) rotate(-0.35deg);
+  }
+  50% {
+    transform: translate3d(
+      calc(var(--camp-pointer-x) * 8px),
+      calc(var(--camp-pointer-y) * 5px - 7px),
+      0
+    ) rotate(0.35deg);
+  }
+}
+
+@keyframes tc-camp-copy-enter {
+  from {
+    opacity: 0;
+    transform: translate3d(-24px, 12px, 0);
+  }
+}
+
+@keyframes tc-camp-enter-top {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -14px, 0);
+  }
+}
+
+@keyframes tc-camp-enter-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0);
+  }
+}
+
+@keyframes tc-signal-pulse {
+  50% {
+    box-shadow: 0 0 0 7px rgb(105 214 176 / 4%);
+    transform: scale(0.9);
+  }
+}
+
 @media (max-width: 760px) {
   .tc-raid-camp {
     padding-bottom: 74px;
@@ -564,6 +823,30 @@
     object-fit: contain;
   }
 
+  .tc-camp-portal {
+    top: 32%;
+    left: 72%;
+    width: 92px;
+  }
+
+  .tc-camp-fire--one {
+    top: 47%;
+    left: 18%;
+  }
+
+  .tc-camp-fire--two {
+    top: 39%;
+    left: 68%;
+  }
+
+  .tc-camp-fire--three {
+    display: none;
+  }
+
+  .tc-camp-embers {
+    inset: 35% 5% 12%;
+  }
+
   .tc-camp-skeleton {
     grid-template-columns: 1fr;
   }
@@ -592,13 +875,19 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tc-camp-skeleton span {
-    animation: none;
-  }
-
   .tc-raid-camp *,
   .tc-raid-camp *::before,
   .tc-raid-camp *::after {
+    animation: none;
+  }
+
+  .tc-raid-camp__scene,
+  .tc-camp-hero__raider {
+    transform: none;
+    will-change: auto;
+  }
+
+  .tc-raid-camp * {
     scroll-behavior: auto;
     transition-duration: 0.01ms;
   }
