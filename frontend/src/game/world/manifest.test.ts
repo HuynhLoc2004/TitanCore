@@ -3,7 +3,7 @@ import { parseWorldManifest, WorldManifestError } from './manifest';
 
 function validManifest() {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     world: {
       id: 'test-world',
       version: 1,
@@ -29,6 +29,27 @@ function validManifest() {
         kind: 'EXIT_GATE',
         startX: 640,
         endX: 1280,
+      },
+    ],
+    collision: [
+      {
+        id: 'camp-crates',
+        x: 180,
+        y: 560,
+        width: 120,
+        height: 80,
+      },
+    ],
+    elevationZones: [
+      {
+        id: 'camp-wind',
+        kind: 'WIND_LIFT',
+        x: 940,
+        y: 540,
+        width: 180,
+        height: 120,
+        elevation: 72,
+        oscillationMs: 2400,
       },
     ],
     assets: [
@@ -136,5 +157,15 @@ describe('parseWorldManifest', () => {
     const excessiveSpeed = validManifest();
     excessiveSpeed.navigation.moveSpeed = 900;
     expect(() => parseWorldManifest(excessiveSpeed)).toThrow();
+  });
+
+  it('rejects collision and elevation outside the walkable band', () => {
+    const blocked = validManifest();
+    blocked.collision[0].y = 200;
+    expect(() => parseWorldManifest(blocked)).toThrow(/navigation bounds/);
+
+    const unsafeLift = validManifest();
+    unsafeLift.elevationZones[0].elevation = 500;
+    expect(() => parseWorldManifest(unsafeLift)).toThrow(/outside its allowed range/);
   });
 });

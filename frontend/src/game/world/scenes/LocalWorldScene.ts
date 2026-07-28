@@ -14,12 +14,14 @@ import {
   CORE_RAIDER_FRAME,
   selectLocomotionState,
 } from '../locomotion';
+import { approachElevation, sampleElevation } from '../traversal';
 
 type MetricsCallback = (metrics: WorldRuntimeMetrics) => void;
 type StatusCallback = (status: WorldRuntimeStatus) => void;
 
 const LOGICAL_WIDTH = 1280;
 const LOGICAL_HEIGHT = 720;
+const HERO_GROUND_OFFSET = 16;
 
 export class LocalWorldScene extends Phaser.Scene {
   private readonly clock = new FixedStepClock();
@@ -34,10 +36,18 @@ export class LocalWorldScene extends Phaser.Scene {
   private hidden = false;
   private visibilityListener?: () => void;
   private readonly blurListener = () => this.inputState?.releaseAll();
-  private hero?: Phaser.Physics.Arcade.Sprite;
+  private heroAnchor?: Phaser.GameObjects.Zone;
+  private heroVisual?: Phaser.GameObjects.Sprite;
+  private heroShadow?: Phaser.GameObjects.Ellipse;
   private keyboardAdapter?: KeyboardInputAdapter;
   private inputState?: UnifiedInputState;
   private dodgeWasPressed = false;
+  private elevation = 0;
+  private foregroundMist?: Phaser.GameObjects.Container;
+  private windRings: Array<{
+    ring: Phaser.GameObjects.Ellipse;
+    oscillationMs: number;
+  }> = [];
   private readonly pointerDown = (pointer: Phaser.Input.Pointer) => {
     if (pointer.leftButtonDown()) this.inputState?.setAction('POINTER', 'ATTACK', true);
   };
@@ -72,31 +82,41 @@ export class LocalWorldScene extends Phaser.Scene {
     this.createAmbient(manifest, quality);
     manifest.entities.forEach((entity) => {
       if (entity.kind === 'HERO') {
-        this.hero = this.physics.add
+        this.heroAnchor = this.add.zone(
+          entity.x,
+          entity.y - HERO_GROUND_OFFSET,
+          56,
+          HERO_GROUND_OFFSET * 2,
+        );
+        this.physics.add.existing(this.heroAnchor);
+        const body = this.heroAnchor.body as Phaser.Physics.Arcade.Body;
+        body.setCollideWorldBounds(true);
+        this.heroShadow = this.add
+          .ellipse(entity.x, entity.y + 3, 76, 24, 0x06101c, 0.34)
+          .setDepth(1000 + entity.y - 2);
+        this.heroVisual = this.add
           .sprite(entity.x, entity.y, entity.assetKey, entity.frame)
           .setOrigin(
             CORE_RAIDER_FRAME.pivotX / CORE_RAIDER_FRAME.width,
             CORE_RAIDER_FRAME.groundY / CORE_RAIDER_FRAME.height,
           )
           .setScale(entity.scale)
-          .setDepth(entity.depth)
-          .setCollideWorldBounds(true);
-        const body = this.hero.body as Phaser.Physics.Arcade.Body;
-        body.setSize(150, 190).setOffset(146, 220);
+          .setDepth(1000 + entity.y);
       } else {
         this.add
           .sprite(entity.x, entity.y, entity.assetKey, entity.frame)
           .setOrigin(0.5, 1)
           .setScale(entity.scale)
-          .setDepth(entity.depth);
+          .setDepth(1000 + entity.y);
       }
     });
+    this.createTraversalGeometry(manifest);
 
-    if (this.hero) {
-      this.createHeroAnimations(this.hero.texture.key);
-      this.hero.play(CORE_RAIDER_ANIMATIONS.idle.key);
+    if (this.heroVisual && this.heroAnchor) {
+      this.createHeroAnimations(this.heroVisual.texture.key);
+      this.heroVisual.play(CORE_RAIDER_ANIMATIONS.idle.key);
       this.cameras.main.startFollow(
-        this.hero,
+        this.heroAnchor,
         true,
         manifest.navigation.cameraLerp,
         manifest.navigation.cameraLerp,
@@ -122,21 +142,22 @@ export class LocalWorldScene extends Phaser.Scene {
       return;
     }
     this.keyboardAdapter?.sample();
-    if (this.hero && this.inputState) {
+    if (this.heroAnchor && this.inputState) {
       const pointer = this.input.activePointer;
       this.inputState.setAim(
         'POINTER',
-        pointer.worldX - this.hero.x,
-        pointer.worldY - this.hero.y,
+        pointer.worldX - this.heroAnchor.x,
+        pointer.worldY - this.heroAnchor.y,
       );
     }
     const result = this.clock.advance(delta, (stepMs) => {
       this.previousSimulationTime = this.simulationTime;
       this.simulationTime += stepMs;
       this.metricSimulationSteps += 1;
-      this.simulateMovement();
+      this.simulateMovement(stepMs);
     });
     this.metricDroppedMs += result.droppedMs;
+    this.renderHero();
     this.renderAmbient(result.alpha);
 
     this.metricElapsed += delta;
@@ -147,26 +168,49 @@ export class LocalWorldScene extends Phaser.Scene {
     }
   }
 
-  private simulateMovement() {
-    if (!this.hero || !this.inputState) return;
+  private simulateMovement(stepMs: number) {
+    if (!this.heroAnchor || !this.heroVisual || !this.inputState) return;
     const manifest = this.registry.get('worldManifest') as WorldManifest;
     const input = this.inputState.snapshot();
     const dodgePressed = input.actions.has('DODGE');
     const dodgeStarted = dodgePressed && !this.dodgeWasPressed;
     this.dodgeWasPressed = dodgePressed;
-    this.hero.setVelocity(
+    const body = this.heroAnchor.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(
       input.moveX * manifest.navigation.moveSpeed,
       input.moveY * manifest.navigation.moveSpeed,
     );
-    if (input.moveX !== 0) this.hero.setFlipX(input.moveX < 0);
+    if (input.moveX !== 0) this.heroVisual.setFlipX(input.moveX < 0);
     if (dodgeStarted) {
-      this.hero.play(CORE_RAIDER_ANIMATIONS.dodgeVisual.key, true);
-    } else if (this.hero.anims.currentAnim?.key !== CORE_RAIDER_ANIMATIONS.dodgeVisual.key
-      || !this.hero.anims.isPlaying) {
+      this.heroVisual.play(CORE_RAIDER_ANIMATIONS.dodgeVisual.key, true);
+    } else if (this.heroVisual.anims.currentAnim?.key
+        !== CORE_RAIDER_ANIMATIONS.dodgeVisual.key
+      || !this.heroVisual.anims.isPlaying) {
       const locomotion = selectLocomotionState(input.moveX, input.moveY);
-      this.hero.play(animationKeyFor(locomotion), true);
+      this.heroVisual.play(animationKeyFor(locomotion), true);
     }
+    const elevationSample = sampleElevation(
+      this.heroAnchor.x,
+      this.heroAnchor.y + HERO_GROUND_OFFSET,
+      this.registry.get('reducedMotion') === true ? 0 : this.simulationTime,
+      manifest.elevationZones,
+    );
+    this.elevation = approachElevation(this.elevation, elevationSample.target, stepMs);
     this.cameras.main.setFollowOffset(-input.moveX * 85, 90 - input.moveY * 32);
+  }
+
+  private renderHero() {
+    if (!this.heroAnchor || !this.heroVisual || !this.heroShadow) return;
+    const groundY = this.heroAnchor.y + HERO_GROUND_OFFSET;
+    this.heroVisual
+      .setPosition(this.heroAnchor.x, groundY - this.elevation)
+      .setDepth(1000 + groundY);
+    const elevationRatio = Phaser.Math.Clamp(this.elevation / 160, 0, 1);
+    this.heroShadow
+      .setPosition(this.heroAnchor.x, groundY + 3)
+      .setScale(1 - elevationRatio * 0.42)
+      .setAlpha(0.34 - elevationRatio * 0.18)
+      .setDepth(1000 + groundY - 2);
   }
 
   private createHeroAnimations(textureKey: string) {
@@ -212,6 +256,35 @@ export class LocalWorldScene extends Phaser.Scene {
         )
         .setDepth(30);
     }
+    this.foregroundMist = this.add.container(0, 0).setDepth(3000);
+    const mistCount = quality === 'LOW' ? 3 : quality === 'BALANCED' ? 5 : 7;
+    for (let index = 0; index < mistCount; index += 1) {
+      this.foregroundMist.add(
+        this.add
+          .ellipse(260 + index * 820, 690 - (index % 2) * 18, 560, 74, 0xccefff, 0.055)
+          .setScrollFactor(1.04, 1),
+      );
+    }
+  }
+
+  private createTraversalGeometry(manifest: WorldManifest) {
+    manifest.collision.forEach((definition) => {
+      const obstacle = this.add.zone(
+        definition.x,
+        definition.y,
+        definition.width,
+        definition.height,
+      );
+      this.physics.add.existing(obstacle, true);
+      if (this.heroAnchor) this.physics.add.collider(this.heroAnchor, obstacle);
+    });
+    manifest.elevationZones.forEach((zone) => {
+      const ring = this.add
+        .ellipse(zone.x, zone.y, zone.width * 0.72, zone.height * 0.52, 0x7eeaff, 0.07)
+        .setStrokeStyle(3, 0x94fff0, 0.22)
+        .setDepth(900 + zone.y);
+      this.windRings.push({ ring, oscillationMs: zone.oscillationMs });
+    });
   }
 
   private renderAmbient(alpha: number) {
@@ -226,6 +299,17 @@ export class LocalWorldScene extends Phaser.Scene {
     );
     const range = reducedMotion ? 12 : 90;
     this.cloudLayer.x = Math.sin(interpolatedTime / 7000) * range;
+    if (this.foregroundMist) {
+      this.foregroundMist.x = Math.sin(interpolatedTime / 5200) * (range * 0.38);
+    }
+    this.windRings.forEach(({ ring, oscillationMs }, index) => {
+      const phase = reducedMotion
+        ? 0
+        : Math.sin((interpolatedTime + index * 190) / oscillationMs * Math.PI * 2);
+      ring
+        .setScale(1 + phase * 0.07, 1 - phase * 0.05)
+        .setAlpha(reducedMotion ? 0.07 : 0.05 + phase * 0.025);
+    });
   }
 
   private emitMetrics() {
@@ -282,10 +366,15 @@ export class LocalWorldScene extends Phaser.Scene {
     this.keyboardAdapter = undefined;
     this.inputState?.releaseAll();
     this.inputState = undefined;
-    this.hero = undefined;
+    this.heroAnchor = undefined;
+    this.heroVisual = undefined;
+    this.heroShadow = undefined;
     this.dodgeWasPressed = false;
+    this.elevation = 0;
     this.clock.reset();
     this.cloudLayer = undefined;
+    this.foregroundMist = undefined;
+    this.windRings = [];
   }
 }
 
