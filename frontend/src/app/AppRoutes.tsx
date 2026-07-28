@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { LoginPage } from '../auth/pages/LoginPage';
 import { OAuthCallbackPage } from '../auth/pages/OAuthCallbackPage';
 import { RegisterPage } from '../auth/pages/RegisterPage';
@@ -6,7 +6,17 @@ import { useAuth } from '../auth/useAuth';
 import { ProfileOnboardingPage } from '../player/pages/ProfileOnboardingPage';
 import { LobbyPage } from '../lobby/LobbyPage';
 
-type Route = '/login' | '/register' | '/onboarding' | '/app' | '/auth/oauth/callback';
+const AnimationLabPage = lazy(() => import('../game/AnimationLabPage').then((module) => ({
+  default: module.AnimationLabPage,
+})));
+
+type Route =
+  | '/login'
+  | '/register'
+  | '/onboarding'
+  | '/app'
+  | '/animation-lab'
+  | '/auth/oauth/callback';
 
 function currentRoute(): Route {
   const path = window.location.pathname;
@@ -18,6 +28,9 @@ function currentRoute(): Route {
   }
   if (path === '/app') {
     return '/app';
+  }
+  if (path === '/animation-lab') {
+    return '/animation-lab';
   }
   if (path === '/onboarding') {
     return '/onboarding';
@@ -47,23 +60,32 @@ export function AppRoutes() {
 
   useEffect(() => {
     if (status === 'authenticated' && user && route !== '/auth/oauth/callback') {
-      const destination = user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app';
+      const completedRoute = route === '/app' || route === '/animation-lab';
+      const destination = user.profile.onboardingStatus === 'REQUIRED'
+        ? '/onboarding'
+        : completedRoute ? route : '/app';
       const redirectKey = `${route}:${destination}`;
       if (route !== destination && redirectRef.current !== redirectKey) {
         redirectRef.current = redirectKey;
         navigate(destination, { replace: true });
       }
     }
-    if (status === 'anonymous' && (route === '/app' || route === '/onboarding')) {
+    if (status === 'anonymous'
+        && (route === '/app' || route === '/onboarding' || route === '/animation-lab')) {
       const redirectKey = `${route}:/login`;
       if (redirectRef.current !== redirectKey) {
         redirectRef.current = redirectKey;
         navigate('/login', { replace: true });
       }
     }
-    if ((status === 'authenticated' && user
-        && route === (user.profile.onboardingStatus === 'REQUIRED' ? '/onboarding' : '/app'))
-        || (status === 'anonymous' && route !== '/app' && route !== '/onboarding')) {
+    const authenticatedDestination = user?.profile.onboardingStatus === 'REQUIRED'
+      ? route === '/onboarding'
+      : route === '/app' || route === '/animation-lab';
+    if ((status === 'authenticated' && user && authenticatedDestination)
+        || (status === 'anonymous'
+          && route !== '/app'
+          && route !== '/onboarding'
+          && route !== '/animation-lab')) {
       redirectRef.current = null;
     }
   }, [route, status, user]);
@@ -80,7 +102,7 @@ export function AppRoutes() {
     if (user.profile.onboardingStatus === 'REQUIRED') {
       return route === '/onboarding' ? <ProfileOnboardingPage /> : <RedirectingScreen />;
     }
-    if (route !== '/app') {
+    if (route !== '/app' && route !== '/animation-lab') {
       return <RedirectingScreen />;
     }
   }
@@ -93,7 +115,29 @@ export function AppRoutes() {
     return <LobbyPage user={user} onLogout={logout} />;
   }
 
+  if (route === '/animation-lab' && status === 'authenticated' && user) {
+    return (
+      <Suspense fallback={<AnimationLabLoadingScreen />}>
+        <AnimationLabPage />
+      </Suspense>
+    );
+  }
+
   return <LoginPage onRegister={() => navigate('/register')} />;
+}
+
+function AnimationLabLoadingScreen() {
+  return (
+    <main className="min-h-screen bg-[var(--tc-bg)] text-white">
+      <section className="tc-shell tc-center">
+        <div className="tc-loader-card" role="status" aria-live="polite">
+          <div className="tc-loader-token" aria-hidden="true" />
+          <p className="tc-eyebrow">Motion Forge</p>
+          <h1>Loading the animation proof</h1>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function BootstrapScreen() {

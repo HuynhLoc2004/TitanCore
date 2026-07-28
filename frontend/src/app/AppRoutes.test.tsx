@@ -6,6 +6,10 @@ import { AuthProvider } from '../auth/AuthProvider';
 import { invalidateAuthGeneration, setAccessToken } from '../auth/api';
 import { AppRoutes, navigate } from './AppRoutes';
 
+vi.mock('../game/AnimationLabPage', () => ({
+  AnimationLabPage: () => <h1>Motion Forge</h1>,
+}));
+
 const user = {
   id: '3d2c4040-66f6-45b7-9235-1d5d7a4d4586',
   email: 'hero@example.com',
@@ -140,6 +144,31 @@ describe('auth routes', () => {
 
     expect(await screen.findByRole('heading', { name: /enter the camp/i })).toBeInTheDocument();
     await waitFor(() => expect(window.location.pathname).toBe('/login'));
+  });
+
+  it('allows a completed authenticated player to open the animation proof', async () => {
+    installSessionFor(user);
+
+    renderApp('/animation-lab');
+
+    expect(await screen.findByRole('heading', { name: /motion forge/i })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/animation-lab');
+  });
+
+  it('does not render the animation proof for an anonymous player', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/animation-lab');
+
+    expect(await screen.findByRole('heading', { name: /enter the camp/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /motion forge/i })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
   });
 
   it('clears the authenticated shell after logout', async () => {
