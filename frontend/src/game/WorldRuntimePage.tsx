@@ -47,7 +47,7 @@ export function WorldRuntimePage() {
     <main className="tc-world-runtime">
       <header className="tc-world-runtime__header">
         <div>
-          <p className="tc-world-runtime__eyebrow">Phase 5.2B movement foundation</p>
+          <p className="tc-world-runtime__eyebrow">Phase 5.2C locomotion production</p>
           <h1>Raid Camp Local Khu</h1>
         </div>
         <div className="tc-world-runtime__actions">
@@ -99,7 +99,8 @@ export function WorldRuntimePage() {
       </section>
 
       <footer id="world-runtime-scope" className="tc-world-runtime__note">
-        Local movement proof only. Combat, loot and multiplayer authority remain outside this phase.
+        Owner-review locomotion proof. Combat, loot and multiplayer authority remain outside this
+        phase.
       </footer>
     </main>
   );

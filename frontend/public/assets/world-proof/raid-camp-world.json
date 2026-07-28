@@ -53,11 +53,11 @@
       "critical": true
     },
     {
-      "key": "core-raider",
+      "key": "core-raider-locomotion",
       "kind": "SPRITESHEET",
-      "url": "/assets/animation-proof/core-raider-proof.png",
-      "frameWidth": 443,
-      "frameHeight": 443,
+      "url": "/assets/locomotion/core-raider-locomotion-v1.png",
+      "frameWidth": 444,
+      "frameHeight": 444,
       "critical": true
     },
     {
@@ -123,7 +123,7 @@
     {
       "id": "local-hero-proof",
       "kind": "HERO",
-      "assetKey": "core-raider",
+      "assetKey": "core-raider-locomotion",
       "x": 620,
       "y": 610,
       "frame": 0,

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "assetId": "core-raider-locomotion-v1",
+  "reviewStatus": "OWNER_REVIEW_REQUIRED",
+  "texture": "/assets/locomotion/core-raider-locomotion-v1.png",
+  "frame": {
+    "width": 444,
+    "height": 444,
+    "columns": 4,
+    "rows": 2,
+    "count": 8
+  },
+  "pivot": {
+    "x": 222,
+    "groundY": 412,
+    "policy": "BOTTOM_CENTER_GROUND"
+  },
+  "sequences": {
+    "idle": [0, 1],
+    "walk": [2, 3, 4, 5],
+    "run": [4, 5, 6, 3],
+    "dodgeVisual": [6, 7, 6]
+  },
+  "guardrails": {
+    "visualOnly": true,
+    "definesHitTiming": false,
+    "definesCollision": false,
+    "serverAuthority": false
+  }
+}
