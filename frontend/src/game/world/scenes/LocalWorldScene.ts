@@ -37,6 +37,9 @@ const LOGICAL_HEIGHT = 720;
 const HERO_GROUND_OFFSET = 16;
 const HERO_ATTACK_ANIMATION = 'core-raider-local-attack';
 const SPROUT_IDLE_ANIMATION = 'core-sprout-local-idle';
+const SPROUT_CHARGE_ANIMATION = 'core-sprout-local-charge';
+const SPROUT_ATTACK_ANIMATION = 'core-sprout-local-attack';
+const SPROUT_RECOVER_ANIMATION = 'core-sprout-local-recover';
 const SPROUT_HIT_ANIMATION = 'core-sprout-local-hit';
 const SLASH_ANIMATION = 'core-local-slash';
 
@@ -364,14 +367,23 @@ export class LocalWorldScene extends Phaser.Scene {
         target.sprite.setFlipX(dx < 0);
       }
       if (target.behavior.state === 'TELEGRAPH' && previousState !== 'TELEGRAPH') {
+        target.sprite.play(SPROUT_CHARGE_ANIMATION, true);
         this.showEnemyTelegraph(target);
       }
       if (result.attack) {
+        target.sprite.play(SPROUT_ATTACK_ANIMATION, true);
         target.telegraph?.destroy();
         target.telegraph = undefined;
         if (distanceToHero <= SPROUT_BEHAVIOR.attackRange + 18) {
           this.applyPlayerHit(target);
         }
+        this.time.delayedCall(190, () => {
+          if (target.behavior.state === 'RECOVER' && target.hp > 0) {
+            target.sprite.play(SPROUT_RECOVER_ANIMATION, true);
+          }
+        });
+      } else if (previousState === 'RECOVER' && target.behavior.state === 'CHASE') {
+        target.sprite.play(SPROUT_IDLE_ANIMATION, true);
       }
     });
   }
@@ -509,8 +521,20 @@ export class LocalWorldScene extends Phaser.Scene {
         manifest.navigation.minY,
         manifest.navigation.maxY,
       );
+      const reducedMotion = this.registry.get('reducedMotion') === true;
+      const motionAmount = reducedMotion ? 0 : target.behavior.state === 'CHASE' ? 0.035 : 0.018;
+      const pulse = Math.sin(
+        this.simulationTime / (target.behavior.state === 'CHASE' ? 90 : 180)
+          + target.spawnX * 0.01,
+      ) * motionAmount;
+      const anticipation = target.behavior.state === 'TELEGRAPH'
+        ? Math.sin(this.simulationTime / 75) * (reducedMotion ? 0.015 : 0.055)
+        : 0;
       target.sprite
-        .setScale(target.baseScale * scale)
+        .setScale(
+          target.baseScale * scale * (1 + pulse + anticipation),
+          target.baseScale * scale * (1 - pulse * 0.65 - anticipation * 0.4),
+        )
         .setDepth(1000 + target.sprite.y);
       target.hpBack
         .setPosition(target.sprite.x, target.sprite.y - 104 * scale)
@@ -581,6 +605,30 @@ export class LocalWorldScene extends Phaser.Scene {
         frames: [{ key: 'core-sprout', frame: 6 }, { key: 'core-sprout', frame: 7 }],
         frameRate: 12,
         repeat: 0,
+      });
+    }
+    if (!this.anims.exists(SPROUT_CHARGE_ANIMATION)) {
+      this.anims.create({
+        key: SPROUT_CHARGE_ANIMATION,
+        frames: [{ key: 'core-sprout', frame: 4 }],
+        frameRate: 1,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists(SPROUT_ATTACK_ANIMATION)) {
+      this.anims.create({
+        key: SPROUT_ATTACK_ANIMATION,
+        frames: [{ key: 'core-sprout', frame: 5 }],
+        frameRate: 1,
+        repeat: 0,
+      });
+    }
+    if (!this.anims.exists(SPROUT_RECOVER_ANIMATION)) {
+      this.anims.create({
+        key: SPROUT_RECOVER_ANIMATION,
+        frames: [{ key: 'core-sprout', frame: 7 }],
+        frameRate: 1,
+        repeat: -1,
       });
     }
     this.targets.forEach((target) => target.sprite.play(SPROUT_IDLE_ANIMATION, true));
