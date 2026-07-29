@@ -31,6 +31,64 @@ login
   -> travel through an in-world gate to the next eligible world
 ```
 
+## Approved 3D Presentation Pivot
+
+The Project Owner has superseded the fixed 2.5D Phaser presentation target.
+Released world gameplay now targets a stylized Three.js third-person world with
+360-degree camera orbit, true terrain elevation, skeletal animation, jumping,
+falling, bounded gliding/aerial states, spatial combat, NPCs, monsters, bosses,
+and up to ten visible players per Khu.
+
+Existing Phaser work remains a prototype/reference for runtime lifecycle,
+input, quality, manifest, and local combat contracts. It must not be expanded
+as the released renderer. The realtime Khu model, connected-world design,
+server authority, dynamic-content boundaries, security, and Admin publishing
+rules remain unchanged.
+
+Before realtime implementation continues, the roadmap inserts:
+
+### Phase 5.3D.1: Renderer Architecture And Local World Proof
+
+- renderer-neutral host and lifecycle;
+- lazy-loaded Three.js bundle;
+- one bounded stylized 3D area;
+- orbit camera with 360-degree yaw and collision-aware pitch/zoom;
+- quality tiers, instrumentation, disposal, loading, and failure states;
+- no networking, durable gameplay changes, or production content.
+
+### Phase 5.3D.2: Hero Traversal And Animation Proof
+
+- reviewed glTF/GLB hero with skeletal clips;
+- walk, run, turn, jump, fall, land, and bounded glide/hover;
+- camera-relative desktop and mobile movement;
+- terrain and obstacle collision;
+- safe spawn and recovery;
+- measured desktop and mobile frame budgets.
+
+### Phase 5.3D.3: Spatial Combat And Living-World Proof
+
+- one NPC, one ordinary monster family, and multiple monster instances;
+- one basic attack, dodge, and one skill;
+- target/aim policy, telegraph, hit reaction, VFX, and temporary reviewed audio;
+- local additional-player representations;
+- no client-trusted movement, damage, cooldown, health, or reward.
+
+### Phase 5.3D.4: Hybrid World Streaming Proof
+
+- one authored hub/landmark region and multiple generated frontier chunks;
+- deterministic server-owned seed and pinned generator version;
+- stable integer cell identity and local-coordinate origin rebasing;
+- collision/navigation-ready traversal boundary;
+- bounded preload, active, retention, and disposal rings;
+- one authored-to-generated and one biome-transition route;
+- deterministic replay, connectivity, repetition, memory, frame-time, and
+  failure-recovery tests;
+- no claim of infinity from a small repeating tile set.
+
+Only after these gates pass may realtime snapshot, interpolation, prediction,
+Khu presence, authoritative combat, infinite-frontier scale, and content volume
+expand.
+
 ## Phase 5.0: Architecture Contract
 
 Deliverables:

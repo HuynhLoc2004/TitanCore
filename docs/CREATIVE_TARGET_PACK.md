@@ -10,7 +10,7 @@ provider dependencies.
 
 The owner-approved decisions are:
 
-1. React continues to own the lobby and Phaser remains combat-only.
+1. React continues to own the lobby and Three.js remains world-gameplay-only.
 2. The Phase 4.2 lobby frontend branch is a technical prototype, not the final
    visual baseline.
 3. The player-facing lobby uses a scene-first Raid Camp Adventure direction.
@@ -225,7 +225,7 @@ artifacts.
 Visual ambition does not change server authority:
 
 - React never invents live room data.
-- Phaser sends movement, attack, and skill intentions only.
+- The world renderer sends movement, attack, and skill intentions only.
 - the backend validates account, room, cooldown, attack, damage, and reward;
 - Redis owns bounded room-scoped realtime state;
 - WebSocket broadcasts sequenced authoritative updates;

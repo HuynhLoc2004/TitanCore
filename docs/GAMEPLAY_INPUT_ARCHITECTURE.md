@@ -22,9 +22,9 @@ DODGE
 INTERACT
 ```
 
-Phaser consumes normalized actions. Network code sends bounded intentions.
-Neither device adapters nor Phaser calculate trusted damage, cooldown, loot, or
-movement legality.
+The approved world renderer consumes normalized actions. Network code sends
+bounded intentions. Neither device adapters nor Three.js calculate trusted
+damage, cooldown, loot, or movement legality.
 
 Each action records:
 
@@ -45,7 +45,7 @@ Approved defaults:
 | Action | Primary | Alternative |
 | --- | --- | --- |
 | Move | `WASD` | Arrow keys |
-| Aim | Mouse/pointer | Keyboard target assist |
+| Camera/aim | Mouse/pointer | Keyboard target assist |
 | Basic attack | Left click | Approved keyboard fallback |
 | Skills | `1`, `2`, `3`, `4` | Remappable later |
 | Dodge/action | `Space` | Remappable later |
@@ -64,6 +64,7 @@ off-screen or invalid target.
 Mobile landscape is the primary combat orientation:
 
 - left-side 360-degree movement joystick;
+- right-side camera-look region with bounded pitch;
 - large basic-attack control on the right;
 - three or four skill controls around the attack control;
 - separate dodge control;
@@ -120,7 +121,7 @@ Review sheets communicate direction; runtime assets require production cleanup:
 3. use consistent frame bounds and stable foot/pivot anchors;
 4. remove frame-to-frame scale and silhouette drift;
 5. pack mobile-safe texture atlases;
-6. verify animation in a real Phaser preview;
+6. verify skeletal animation in a real Three.js preview;
 7. measure frame time and memory on desktop and landscape mobile.
 
 A moving static cutout is not an approved character animation. Runtime character

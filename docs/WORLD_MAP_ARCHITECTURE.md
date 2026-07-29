@@ -4,7 +4,7 @@
 
 This document defines the owner-approved Phase 5.0 realtime world model. It is
 architecture guidance only. It does not approve migrations, APIs, WebSocket
-handlers, Redis scripts, Phaser scenes, monsters, combat formulas, production
+handlers, Redis scripts, renderer scenes, monsters, combat formulas, production
 assets, audio, or Admin implementation.
 
 TitanCore is a chain of connected realtime hunting worlds, not a sequence of
@@ -28,9 +28,9 @@ Each world owns a coherent content set:
 - NPC cast, quests, resources, items, and rewards;
 - World Gates and server-owned progression requirements.
 
-The world graph is published, versioned data. React and Phaser may render only
-registered destinations and interactions; remote content cannot inject routes,
-commands, permissions, scripts, or combat rules.
+The world graph is published, versioned data. React and the approved world
+renderer may render only registered destinations and interactions; remote
+content cannot inject routes, commands, permissions, scripts, or combat rules.
 
 Map transition is an in-world action:
 
@@ -48,35 +48,125 @@ approach World Gate
 The client cannot claim that a world is unlocked. A failed transfer leaves the
 player safely in the source world or returns to a recoverable route.
 
-## Approved 2.5D World Presentation
+## Approved Stylized 3D World Presentation
 
-TitanCore uses a layered 2.5D presentation in Phaser rather than a second 3D
-engine. This preserves the illustrated cartoon direction and mobile budget
-while giving long maps readable depth.
+TitanCore uses a stylized Three.js world with a third-person orbit camera. The
+camera supports 360-degree yaw, bounded pitch and zoom, and collision-aware
+framing. This replaces the earlier fixed 2.5D presentation decision.
 
-- Ground coordinates remain the navigation and collision authority.
-- Character sprites, shadows, foreground occluders, mist, and distant layers
-  are separate presentation objects.
-- Y-depth sorting determines whether an entity renders in front of or behind a
-  reviewed prop boundary.
+- World coordinates, terrain, navigation surfaces, collision volumes, and
+  server-approved traversal state define movement legality.
+- Characters, monsters, bosses, NPCs, props, terrain, particles, shadows, fog,
+  water, foliage, and distant landmarks are separate bounded scene systems.
 - Data-defined obstacles prevent traversal through walls, cliffs, structures,
   supplies, and other solid landmarks.
-- Elevation zones such as wind lifts may visually raise a character while its
-  ground anchor remains authoritative.
-- A visual jump, hover, bridge, or lift never grants passage through a blocked
-  ground route unless the server-approved traversal rule also permits it.
-- Camera look-ahead and parallax communicate depth but never move collision or
-  disguise a reconciliation correction.
+- Jump, fall, glide, hover, lift, and future flight states have explicit
+  authoritative rules. Visual elevation alone grants no movement privilege.
+- Camera orbit never changes collision authority or hides reconciliation.
+- Skeletal animation and bounded secondary motion replace static-cutout
+  locomotion for released heroes and creatures.
 
-Large worlds are composed from bounded streamed chunks and reviewed transition
-seams. They are not delivered as one unbounded texture or loaded in full before
-entry. The local Phase 5.2 proof may use a repeated temporary background while
-collision, elevation, streaming, and asset-layer contracts are verified; that
-background is not approved final map art.
+Large worlds are composed from bounded streamed 3D chunks and reviewed
+transition zones. They are not delivered as one monolithic scene or loaded in
+full before entry. Each Khu pins published map, content, and asset versions.
+Chunk loading cannot move authority or expose an unloaded traversal path.
 
-True 3D terrain, unrestricted flight, and a second renderer are deferred. They
-require separate asset, performance, input, authority, and mobile acceptance
-decisions.
+The Phase 5 Phaser world remains a prototype/reference and is not approved final
+map presentation.
+
+## Hybrid Connected Infinite World
+
+TitanCore uses a hybrid authored-and-procedural world model. "Infinite" means
+that a player can continue exploring streamed frontier regions without reaching
+an arbitrary rectangular map edge. It does not mean uncontrolled random terrain
+or an unlimited amount of active server state.
+
+Authored content provides identity and narrative quality:
+
+- cities, villages, camps, NPC hubs, dungeons, boss arenas, World Gates, story
+  routes, landmarks, puzzles, and cinematics are reviewed authored content;
+- each world has an approved biome graph, silhouette language, ecology,
+  traversal rules, music, ambience, monster families, boss, and story premise;
+- authored landmarks use stable world identities so quests and multiplayer
+  references never depend on a transient client coordinate.
+
+Procedural frontier content provides continued exploration:
+
+- bounded terrain chunks are generated from a server-owned seed, generator
+  version, biome rules, and published content version;
+- all clients in the same pinned Khu resolve the same terrain, spawn anchors,
+  traversal surfaces, and landmark references;
+- approved chunk grammar controls elevation, paths, caves, gathering spaces,
+  monster habitats, traversal challenges, and transitions;
+- generation must pass connectivity, slope, collision, spawn safety, navigation,
+  content density, repetition, and performance validation before publication;
+- a small shuffled set of repeated tiles is not accepted as an infinite world.
+
+The world may contain authored core regions, generated frontier belts, authored
+destination regions, and instanced dungeons or story spaces. World Gates connect
+separate world identities and biomes without turning the experience into a boss
+selection menu.
+
+## Spatial Cells And Streaming
+
+Every chunk and spatial cell has a stable identity derived from approved world
+identity and integer coordinates. Floating-point render coordinates are local
+to a moving origin; durable and authoritative references use stable cell
+identity plus bounded local coordinates.
+
+- The server activates simulation only for occupied and required neighboring
+  cells.
+- The client loads a bounded ring of visible/predicted chunks around the hero.
+- Critical collision and navigation arrive before a chunk becomes traversable.
+- Visual detail, foliage, ambience, and optional encounters may stream later.
+- Leaving a cell releases presentation resources after a bounded retention
+  window; it does not silently delete durable progression.
+- Origin rebasing keeps camera, physics, particles, and animation numerically
+  stable far from the first authored region.
+- Transfer across a cell boundary is seamless when content is ready and enters
+  a recoverable loading boundary when it is not.
+
+Interest management sends each client only nearby players, monsters, NPC state,
+drops, interactions, and relevant effects. Khu-wide chat, boss announcements,
+and critical world events remain separate bounded channels.
+
+## Frontier Persistence And Regeneration
+
+The world seed is not sufficient authority for mutable gameplay. The server
+owns monster state, encounter state, drops, temporary modifications, discovered
+progress, and durable player outcomes.
+
+- Generated base terrain is reproducible from a pinned generator and content
+  version.
+- Transient cells may unload when empty under a documented lifecycle.
+- Durable discoveries and rewards use stable identifiers and PostgreSQL-backed
+  outcomes where required.
+- Generator or biome updates create a new published version. They never reshape
+  an active Khu beneath connected players.
+- Existing Khu instances remain pinned until a safe migration, closure, or
+  restart boundary.
+- Failed generation, missing assets, or invalid navigation closes the affected
+  route safely; the client may not invent fallback terrain.
+
+Frontier difficulty follows authored progression bands, monster ecology, and
+world rules. Distance alone cannot create unbounded health, damage, rewards, or
+economy inflation.
+
+## Admin And Publishing Boundary
+
+Future Admin tooling manages draft biome graphs, chunk grammar, landmarks,
+monster habitats, spawn budgets, boss regions, NPC placements, traversal rules,
+asset dependencies, and generator versions through review and preview.
+
+- Preview includes deterministic seed replay and navigation/performance checks.
+- Publish produces an immutable version; rollback publishes a previous approved
+  version as a new operation.
+- Emergency controls may stop new Khu creation, close a dangerous frontier
+  route, or drain an affected version.
+- Admin changes never mutate terrain, collision, spawn policy, or encounter
+  rules inside an active pinned Khu.
+- AI may propose terrain or content drafts, but cannot publish a generator,
+  chunk, landmark, spawn table, quest, asset, or narrative definition.
 
 ## Approved World Model
 

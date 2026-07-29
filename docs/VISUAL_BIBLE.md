@@ -60,7 +60,7 @@ Core palette:
 | `sky` | `#3EA7FF` | Information, friendly effects, links |
 | `violet` | `#7556E8` | Magic, special actions, secondary accent |
 
-Semantic colors must have stable meanings across React and Phaser. Danger,
+Semantic colors must have stable meanings across React and the world renderer. Danger,
 warning, success, information, rarity, and team identity must never depend on
 color alone. Pair color with shape, icon, label, pattern, or animation.
 
