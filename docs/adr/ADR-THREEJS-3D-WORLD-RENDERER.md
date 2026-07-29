@@ -151,6 +151,16 @@ performance budgets. Endless repetition of a small tile set is not accepted.
   authoritative movement.
 - VFX are pooled, priority-limited, distance-limited, and reduced before
   telegraph clarity is compromised.
+- Character acceptance includes topology/deformation, foot contact, locomotion
+  blending, turning, facial expression, secondary motion, material separation,
+  gameplay-camera readability, and mobile quality review.
+- Flat AI cutouts, independently generated pose sequences, rigid translations,
+  foot sliding, waxy/plastic materials, uniform highlights, and one-expression
+  characters are prototype-only and cannot be presented as released quality.
+- Modern stylized action RPGs are a quality reference for camera feel,
+  animation continuity, character appeal, world depth, and combat response.
+  TitanCore must retain original characters, worlds, story, materials, effects,
+  audio, interface, and visual identity.
 
 ## Performance Contract
 
