@@ -48,6 +48,36 @@ approach World Gate
 The client cannot claim that a world is unlocked. A failed transfer leaves the
 player safely in the source world or returns to a recoverable route.
 
+## Approved 2.5D World Presentation
+
+TitanCore uses a layered 2.5D presentation in Phaser rather than a second 3D
+engine. This preserves the illustrated cartoon direction and mobile budget
+while giving long maps readable depth.
+
+- Ground coordinates remain the navigation and collision authority.
+- Character sprites, shadows, foreground occluders, mist, and distant layers
+  are separate presentation objects.
+- Y-depth sorting determines whether an entity renders in front of or behind a
+  reviewed prop boundary.
+- Data-defined obstacles prevent traversal through walls, cliffs, structures,
+  supplies, and other solid landmarks.
+- Elevation zones such as wind lifts may visually raise a character while its
+  ground anchor remains authoritative.
+- A visual jump, hover, bridge, or lift never grants passage through a blocked
+  ground route unless the server-approved traversal rule also permits it.
+- Camera look-ahead and parallax communicate depth but never move collision or
+  disguise a reconciliation correction.
+
+Large worlds are composed from bounded streamed chunks and reviewed transition
+seams. They are not delivered as one unbounded texture or loaded in full before
+entry. The local Phase 5.2 proof may use a repeated temporary background while
+collision, elevation, streaming, and asset-layer contracts are verified; that
+background is not approved final map art.
+
+True 3D terrain, unrestricted flight, and a second renderer are deferred. They
+require separate asset, performance, input, authority, and mobile acceptance
+decisions.
+
 ## Approved World Model
 
 One published map contains 15 realtime channels called `Khu` in player-facing

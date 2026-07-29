@@ -47,7 +47,7 @@ export function WorldRuntimePage() {
     <main className="tc-world-runtime">
       <header className="tc-world-runtime__header">
         <div>
-          <p className="tc-world-runtime__eyebrow">Phase 5.2C locomotion production</p>
+          <p className="tc-world-runtime__eyebrow">Phase 5.3A combat feel sandbox</p>
           <h1>Raid Camp Local Khu</h1>
         </div>
         <div className="tc-world-runtime__actions">
@@ -99,8 +99,7 @@ export function WorldRuntimePage() {
       </section>
 
       <footer id="world-runtime-scope" className="tc-world-runtime__note">
-        Owner-review locomotion proof. Combat, loot and multiplayer authority remain outside this
-        phase.
+        Local combat-feel proof only. Damage, loot and multiplayer authority are not server-backed.
       </footer>
     </main>
   );

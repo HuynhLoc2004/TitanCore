@@ -1,6 +1,7 @@
 export type WorldAssetKind = 'IMAGE' | 'SPRITESHEET';
 export type WorldEntityKind = 'HERO' | 'MONSTER';
 export type WorldRegionKind = 'SAFE_HUB' | 'HUNTING' | 'EVENT' | 'BOSS' | 'EXIT_GATE';
+export type ElevationZoneKind = 'WIND_LIFT';
 
 type WorldAssetBase = {
   key: string;
@@ -49,8 +50,22 @@ export type WorldEntityDefinition = {
   depth: number;
 };
 
+export type WorldCollisionDefinition = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type WorldElevationZoneDefinition = WorldCollisionDefinition & {
+  kind: ElevationZoneKind;
+  elevation: number;
+  oscillationMs: number;
+};
+
 export type WorldManifest = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   world: {
     id: string;
     version: number;
@@ -65,6 +80,8 @@ export type WorldManifest = {
     cameraLerp: number;
   };
   regions: WorldRegionDefinition[];
+  collision: WorldCollisionDefinition[];
+  elevationZones: WorldElevationZoneDefinition[];
   assets: WorldAssetDefinition[];
   layers: WorldLayerDefinition[];
   entities: WorldEntityDefinition[];
@@ -90,16 +107,30 @@ export function parseWorldManifest(value: unknown): WorldManifest {
   const manifest = requireRecord(value, 'manifest');
   requireExactKeys(
     manifest,
-    ['schemaVersion', 'world', 'navigation', 'regions', 'assets', 'layers', 'entities', 'ambient'],
+    [
+      'schemaVersion',
+      'world',
+      'navigation',
+      'regions',
+      'collision',
+      'elevationZones',
+      'assets',
+      'layers',
+      'entities',
+      'ambient',
+    ],
     'manifest',
   );
-  if (manifest.schemaVersion !== 1) {
+  if (manifest.schemaVersion !== 2) {
     throw new WorldManifestError('Unsupported world manifest schema version.');
   }
 
   const world = parseWorld(manifest.world);
   const navigation = parseNavigation(manifest.navigation, world.height);
   const regions = requireArray(manifest.regions, 'regions').map(parseRegion);
+  const collision = requireArray(manifest.collision, 'collision').map(parseCollision);
+  const elevationZones = requireArray(manifest.elevationZones, 'elevationZones')
+    .map(parseElevationZone);
   const assets = requireArray(manifest.assets, 'assets').map(parseAsset);
   const layers = requireArray(manifest.layers, 'layers').map(parseLayer);
   const entities = requireArray(manifest.entities, 'entities').map(parseEntity);
@@ -107,6 +138,8 @@ export function parseWorldManifest(value: unknown): WorldManifest {
 
   requireUnique(assets.map((asset) => asset.key), 'asset key');
   requireUnique(regions.map((region) => region.id), 'region id');
+  requireUnique(collision.map((entry) => entry.id), 'collision id');
+  requireUnique(elevationZones.map((zone) => zone.id), 'elevation zone id');
   requireUnique(layers.map((layer) => layer.id), 'layer id');
   requireUnique(entities.map((entity) => entity.id), 'entity id');
 
@@ -134,6 +167,13 @@ export function parseWorldManifest(value: unknown): WorldManifest {
     }
   });
   validateRegions(regions, world.width);
+  [...collision, ...elevationZones].forEach((entry) => {
+    if (entry.x - entry.width / 2 < 0 || entry.x + entry.width / 2 > world.width
+        || entry.y - entry.height / 2 < navigation.minY
+        || entry.y + entry.height / 2 > navigation.maxY) {
+      throw new WorldManifestError(`Traversal entry exceeds navigation bounds: ${entry.id}.`);
+    }
+  });
   layers.forEach((layer) => {
     if (layer.x - layer.width / 2 < 0 || layer.x + layer.width / 2 > world.width
         || layer.y - layer.height / 2 < 0 || layer.y + layer.height / 2 > world.height) {
@@ -145,19 +185,63 @@ export function parseWorldManifest(value: unknown): WorldManifest {
       throw new WorldManifestError(`Entity exceeds world bounds: ${entity.id}.`);
     }
   });
-  if (assets.length === 0 || assets.length > 64 || layers.length > 32 || entities.length > 128) {
+  if (assets.length === 0 || assets.length > 64 || layers.length > 32 || entities.length > 128
+      || collision.length > 64 || elevationZones.length > 16) {
     throw new WorldManifestError('World manifest exceeds bounded runtime collections.');
   }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     world,
     navigation,
     regions,
+    collision,
+    elevationZones,
     assets,
     layers,
     entities,
     ambient,
+  };
+}
+
+function parseCollision(value: unknown, index: number): WorldCollisionDefinition {
+  return parseBoundedRectangle(value, `collision[${index}]`);
+}
+
+function parseElevationZone(value: unknown, index: number): WorldElevationZoneDefinition {
+  const label = `elevationZones[${index}]`;
+  const zone = requireRecord(value, label);
+  requireExactKeys(
+    zone,
+    ['id', 'kind', 'x', 'y', 'width', 'height', 'elevation', 'oscillationMs'],
+    label,
+  );
+  return {
+    ...parseBoundedRectangle(zone, label, false),
+    kind: requireEnum(zone.kind, ['WIND_LIFT'] as const, `${label}.kind`),
+    elevation: requireNumber(zone.elevation, 24, 160, `${label}.elevation`),
+    oscillationMs: requireInteger(
+      zone.oscillationMs,
+      800,
+      10_000,
+      `${label}.oscillationMs`,
+    ),
+  };
+}
+
+function parseBoundedRectangle(
+  value: unknown,
+  label: string,
+  validateKeys = true,
+): WorldCollisionDefinition {
+  const rectangle = requireRecord(value, label);
+  if (validateKeys) requireExactKeys(rectangle, ['id', 'x', 'y', 'width', 'height'], label);
+  return {
+    id: requireId(rectangle.id, `${label}.id`),
+    x: requireNumber(rectangle.x, 0, 16_384, `${label}.x`),
+    y: requireNumber(rectangle.y, 0, 16_384, `${label}.y`),
+    width: requireNumber(rectangle.width, 8, 2048, `${label}.width`),
+    height: requireNumber(rectangle.height, 8, 2048, `${label}.height`),
   };
 }
 

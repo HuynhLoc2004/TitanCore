@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "world": {
     "id": "raid-camp-runtime-proof",
     "version": 1,
@@ -45,6 +45,65 @@
       "endX": 5120
     }
   ],
+  "collision": [
+    {
+      "id": "camp-anvil",
+      "x": 160,
+      "y": 588,
+      "width": 190,
+      "height": 92
+    },
+    {
+      "id": "camp-supply-wall",
+      "x": 960,
+      "y": 628,
+      "width": 230,
+      "height": 82
+    },
+    {
+      "id": "trail-left-barricade",
+      "x": 1510,
+      "y": 540,
+      "width": 180,
+      "height": 88
+    },
+    {
+      "id": "crossing-core-plinth",
+      "x": 2920,
+      "y": 610,
+      "width": 220,
+      "height": 90
+    },
+    {
+      "id": "causeway-supply-wall",
+      "x": 4200,
+      "y": 625,
+      "width": 210,
+      "height": 84
+    }
+  ],
+  "elevationZones": [
+    {
+      "id": "windmill-updraft",
+      "kind": "WIND_LIFT",
+      "x": 2580,
+      "y": 548,
+      "width": 520,
+      "height": 210,
+      "elevation": 86,
+      "oscillationMs": 2600
+    },
+    {
+      "id": "east-core-updraft",
+      "kind": "WIND_LIFT",
+      "x": 4740,
+      "y": 548,
+      "width": 360,
+      "height": 210,
+      "elevation": 110,
+      "oscillationMs": 2200
+    }
+  ],
   "assets": [
     {
       "key": "raid-camp-background",
@@ -58,6 +117,22 @@
       "url": "/assets/locomotion/core-raider-locomotion-v1.png",
       "frameWidth": 444,
       "frameHeight": 444,
+      "critical": true
+    },
+    {
+      "key": "core-raider-attack",
+      "kind": "SPRITESHEET",
+      "url": "/assets/animation-proof/core-raider-proof.png",
+      "frameWidth": 443,
+      "frameHeight": 443,
+      "critical": true
+    },
+    {
+      "key": "core-slash-effect",
+      "kind": "SPRITESHEET",
+      "url": "/assets/animation-proof/core-slash-proof.png",
+      "frameWidth": 384,
+      "frameHeight": 341,
       "critical": true
     },
     {
@@ -134,7 +209,7 @@
       "id": "sprout-proof-1",
       "kind": "MONSTER",
       "assetKey": "core-sprout",
-      "x": 1160,
+      "x": 850,
       "y": 620,
       "frame": 0,
       "scale": 0.22,
@@ -144,7 +219,7 @@
       "id": "sprout-proof-2",
       "kind": "MONSTER",
       "assetKey": "core-sprout",
-      "x": 1420,
+      "x": 1180,
       "y": 590,
       "frame": 1,
       "scale": 0.22,
@@ -154,7 +229,7 @@
       "id": "sprout-proof-3",
       "kind": "MONSTER",
       "assetKey": "core-sprout",
-      "x": 1760,
+      "x": 1540,
       "y": 625,
       "frame": 2,
       "scale": 0.22,
