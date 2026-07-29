@@ -73,8 +73,21 @@ Before realtime implementation continues, the roadmap inserts:
 - local additional-player representations;
 - no client-trusted movement, damage, cooldown, health, or reward.
 
+### Phase 5.3D.4: Hybrid World Streaming Proof
+
+- one authored hub/landmark region and multiple generated frontier chunks;
+- deterministic server-owned seed and pinned generator version;
+- stable integer cell identity and local-coordinate origin rebasing;
+- collision/navigation-ready traversal boundary;
+- bounded preload, active, retention, and disposal rings;
+- one authored-to-generated and one biome-transition route;
+- deterministic replay, connectivity, repetition, memory, frame-time, and
+  failure-recovery tests;
+- no claim of infinity from a small repeating tile set.
+
 Only after these gates pass may realtime snapshot, interpolation, prediction,
-Khu presence, authoritative combat, and content volume expand.
+Khu presence, authoritative combat, infinite-frontier scale, and content volume
+expand.
 
 ## Phase 5.0: Architecture Contract
 

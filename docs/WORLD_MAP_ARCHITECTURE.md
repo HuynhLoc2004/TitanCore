@@ -74,6 +74,100 @@ Chunk loading cannot move authority or expose an unloaded traversal path.
 The Phase 5 Phaser world remains a prototype/reference and is not approved final
 map presentation.
 
+## Hybrid Connected Infinite World
+
+TitanCore uses a hybrid authored-and-procedural world model. "Infinite" means
+that a player can continue exploring streamed frontier regions without reaching
+an arbitrary rectangular map edge. It does not mean uncontrolled random terrain
+or an unlimited amount of active server state.
+
+Authored content provides identity and narrative quality:
+
+- cities, villages, camps, NPC hubs, dungeons, boss arenas, World Gates, story
+  routes, landmarks, puzzles, and cinematics are reviewed authored content;
+- each world has an approved biome graph, silhouette language, ecology,
+  traversal rules, music, ambience, monster families, boss, and story premise;
+- authored landmarks use stable world identities so quests and multiplayer
+  references never depend on a transient client coordinate.
+
+Procedural frontier content provides continued exploration:
+
+- bounded terrain chunks are generated from a server-owned seed, generator
+  version, biome rules, and published content version;
+- all clients in the same pinned Khu resolve the same terrain, spawn anchors,
+  traversal surfaces, and landmark references;
+- approved chunk grammar controls elevation, paths, caves, gathering spaces,
+  monster habitats, traversal challenges, and transitions;
+- generation must pass connectivity, slope, collision, spawn safety, navigation,
+  content density, repetition, and performance validation before publication;
+- a small shuffled set of repeated tiles is not accepted as an infinite world.
+
+The world may contain authored core regions, generated frontier belts, authored
+destination regions, and instanced dungeons or story spaces. World Gates connect
+separate world identities and biomes without turning the experience into a boss
+selection menu.
+
+## Spatial Cells And Streaming
+
+Every chunk and spatial cell has a stable identity derived from approved world
+identity and integer coordinates. Floating-point render coordinates are local
+to a moving origin; durable and authoritative references use stable cell
+identity plus bounded local coordinates.
+
+- The server activates simulation only for occupied and required neighboring
+  cells.
+- The client loads a bounded ring of visible/predicted chunks around the hero.
+- Critical collision and navigation arrive before a chunk becomes traversable.
+- Visual detail, foliage, ambience, and optional encounters may stream later.
+- Leaving a cell releases presentation resources after a bounded retention
+  window; it does not silently delete durable progression.
+- Origin rebasing keeps camera, physics, particles, and animation numerically
+  stable far from the first authored region.
+- Transfer across a cell boundary is seamless when content is ready and enters
+  a recoverable loading boundary when it is not.
+
+Interest management sends each client only nearby players, monsters, NPC state,
+drops, interactions, and relevant effects. Khu-wide chat, boss announcements,
+and critical world events remain separate bounded channels.
+
+## Frontier Persistence And Regeneration
+
+The world seed is not sufficient authority for mutable gameplay. The server
+owns monster state, encounter state, drops, temporary modifications, discovered
+progress, and durable player outcomes.
+
+- Generated base terrain is reproducible from a pinned generator and content
+  version.
+- Transient cells may unload when empty under a documented lifecycle.
+- Durable discoveries and rewards use stable identifiers and PostgreSQL-backed
+  outcomes where required.
+- Generator or biome updates create a new published version. They never reshape
+  an active Khu beneath connected players.
+- Existing Khu instances remain pinned until a safe migration, closure, or
+  restart boundary.
+- Failed generation, missing assets, or invalid navigation closes the affected
+  route safely; the client may not invent fallback terrain.
+
+Frontier difficulty follows authored progression bands, monster ecology, and
+world rules. Distance alone cannot create unbounded health, damage, rewards, or
+economy inflation.
+
+## Admin And Publishing Boundary
+
+Future Admin tooling manages draft biome graphs, chunk grammar, landmarks,
+monster habitats, spawn budgets, boss regions, NPC placements, traversal rules,
+asset dependencies, and generator versions through review and preview.
+
+- Preview includes deterministic seed replay and navigation/performance checks.
+- Publish produces an immutable version; rollback publishes a previous approved
+  version as a new operation.
+- Emergency controls may stop new Khu creation, close a dangerous frontier
+  route, or drain an affected version.
+- Admin changes never mutate terrain, collision, spawn policy, or encounter
+  rules inside an active pinned Khu.
+- AI may propose terrain or content drafts, but cannot publish a generator,
+  chunk, landmark, spawn table, quest, asset, or narrative definition.
+
 ## Approved World Model
 
 One published map contains 15 realtime channels called `Khu` in player-facing

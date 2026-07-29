@@ -115,6 +115,29 @@ The initial vertical slice proves:
 Unrestricted flight is not client-owned movement. Every aerial state has
 server-approved entry, duration, velocity, collision, and exit rules.
 
+## World Scale And Streaming
+
+Use a hybrid connected infinite-world model rather than either one finite
+rectangle or uncontrolled procedural generation.
+
+- Story hubs, boss arenas, NPC spaces, landmarks, gates, dungeons, and critical
+  routes are authored and reviewed.
+- Frontier terrain streams as bounded chunks generated from a server-owned
+  seed, generator version, biome graph, and published content version.
+- Stable integer cell identities plus bounded local coordinates are
+  authoritative; the renderer uses origin rebasing for numerical stability.
+- Three.js loads only a bounded visible and predicted neighborhood.
+- Collision/navigation for a destination chunk is ready before traversal.
+- Instancing, LOD, culling, pooled ambience, and asset reference counting apply
+  at chunk boundaries.
+- The server simulates occupied interest cells rather than an unlimited world.
+- Active Khu pin generator, content, and asset versions. Admin publication never
+  mutates a running world.
+
+Procedural generation must preserve authored biome identity, reachable
+navigation, spawn safety, meaningful landmarks, controlled repetition, and
+performance budgets. Endless repetition of a small tile set is not accepted.
+
 ## Art And Animation Contract
 
 - Use stylized proportions, cel/toon materials, authored silhouettes, controlled
@@ -146,6 +169,9 @@ Targets:
   browser-compatible asset pipeline;
 - at most ten full-quality nearby player representations per Khu;
 - distant entities use reduced animation update rates and simplified effects;
+- chunk loading, decoding, compilation, and disposal have bounded per-frame work;
+- active chunks, prefetch radius, retained assets, monsters, NPCs, particles,
+  lights, and audio emitters have explicit tier-specific budgets;
 - React performs no per-frame gameplay state updates.
 
 The first 3D PR must report frame time, draw calls, triangles, texture memory,
