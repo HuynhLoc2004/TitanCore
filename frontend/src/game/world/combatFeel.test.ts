@@ -36,4 +36,13 @@ describe('local combat feel contract', () => {
     expect(selectTargets({ x: 0, y: 0 }, targets, 100, true).map(({ id }) => id))
       .toEqual(['near-a', 'near-b']);
   });
+
+  it('keeps directed attacks in front while area skills remain omnidirectional', () => {
+    const targets = [
+      { id: 'behind', x: -20, y: 0, active: true },
+      { id: 'ahead', x: 80, y: 0, active: true },
+    ];
+    expect(selectTargets({ x: 0, y: 0 }, targets, 100, false, 1)[0].id).toBe('ahead');
+    expect(selectTargets({ x: 0, y: 0 }, targets, 100, true, 1)).toHaveLength(2);
+  });
 });

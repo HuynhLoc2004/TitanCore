@@ -47,7 +47,7 @@ export function WorldRuntimePage() {
     <main className="tc-world-runtime">
       <header className="tc-world-runtime__header">
         <div>
-          <p className="tc-world-runtime__eyebrow">Phase 5.3B enemy behavior sandbox</p>
+          <p className="tc-world-runtime__eyebrow">Phase 5.4 first hunt foundation</p>
           <h1>Raid Camp Local Khu</h1>
         </div>
         <div className="tc-world-runtime__actions">
@@ -99,8 +99,7 @@ export function WorldRuntimePage() {
       </section>
 
       <footer id="world-runtime-scope" className="tc-world-runtime__note">
-        Local enemy-behavior proof only. Damage, loot and multiplayer authority are not
-        server-backed.
+        Local first-hunt proof only. Damage, loot and multiplayer authority are not server-backed.
       </footer>
     </main>
   );
