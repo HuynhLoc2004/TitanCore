@@ -16,13 +16,13 @@ export const CORE_RAIDER_ANIMATIONS = {
   },
   walk: {
     key: 'core-raider-walk',
-    frames: [2, 3, 4, 5],
+    frames: [2, 3, 4, 3],
     frameRate: 8,
     repeat: -1,
   },
   run: {
     key: 'core-raider-run',
-    frames: [4, 5, 6, 3],
+    frames: [4, 5, 6, 7],
     frameRate: 10,
     repeat: -1,
   },
