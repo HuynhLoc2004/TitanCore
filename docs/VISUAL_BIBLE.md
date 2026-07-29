@@ -161,6 +161,56 @@ Each hero requires a turntable, gameplay-distance review, animation review,
 material review, mobile quality review, and silhouette comparison against the
 approved roster before publication.
 
+## Third-Person Camera Language
+
+The released world never uses the current flat, front-facing side-view
+composition as its primary gameplay camera.
+
+The default exploration camera sits behind and above the local hero with a
+slight lateral composition offset. It frames the path, destination, nearby
+characters, terrain height, and sky rather than placing the hero as an oversized
+cutout in the exact center of the screen.
+
+- Continuous orbit yaw covers the full 360-degree range with no artificial
+  front-facing stop.
+- Bounded pitch lets the player inspect terrain below, landmarks above, aerial
+  enemies, jumps, glides, and vertical routes without flipping the camera.
+- Zoom supports reviewed exploration, combat, indoor, boss, and accessibility
+  distances; it never becomes an unrestricted debug camera.
+- Mouse drag or pointer-lock behavior is explicit on desktop. Touch uses a
+  dedicated camera-look region separate from movement and skill controls.
+- Camera-relative movement preserves intuitive forward, strafe, turn, jump, and
+  aerial steering at every orbit angle.
+- Camera collision uses a swept volume and soft recovery so walls, foliage,
+  ceilings, large enemies, and props cannot trap the view or reveal unloaded
+  space.
+- Occluding foliage and approved props fade or simplify near the camera instead
+  of hiding the hero or critical threats.
+- Exploration uses smooth spring behavior and restrained look-ahead. Combat may
+  tighten framing, bias toward a selected threat, and widen for boss telegraphs
+  without stealing control.
+- Jumping and falling preserve horizon and landing visibility. Gliding and
+  aerial skills show altitude, direction, momentum, destination, and nearby
+  threats rather than pointing the camera straight at the hero.
+- Camera transitions have bounded acceleration and damping. Sudden snapping,
+  constant auto-centering, excessive lag, mechanical orbit, and uncontrolled
+  shake are rejected.
+
+Camera composition is reviewed at minimum for:
+
+1. exploration on open terrain;
+2. narrow paths and interiors;
+3. steep ascent and descent;
+4. jump, fall, lift, glide, and aerial skill;
+5. ordinary-monster groups;
+6. large boss encounters;
+7. ten-player Khu activity;
+8. desktop 1440x900 and representative mobile landscape.
+
+The player may recenter the camera with a clear action. Reduced-motion mode
+retains manual orbit and gameplay visibility while reducing automated sway,
+shake, acceleration, and cinematic displacement.
+
 ## Boss Language
 
 - Bosses occupy approximately three to six times the visual mass of a player.
