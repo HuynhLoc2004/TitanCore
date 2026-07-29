@@ -97,11 +97,20 @@ The primary camera is a third-person perspective camera:
 
 - orbit yaw supports a full 360-degree range;
 - pitch and zoom are bounded to preserve readability and avoid terrain clipping;
+- default framing is behind and above the hero with an intentional lateral
+  composition offset, not a flat front-facing or oversized centered cutout;
 - collision prevents the camera passing through solid world geometry;
+- near-camera occluders use reviewed fading or simplification;
 - camera-relative movement is supported on keyboard, gamepad, and touch;
 - mobile uses a left movement joystick and right camera-look region;
 - lock-on or target assist, when approved, never overrides a clear player
   selection or targets an invalid entity.
+
+Exploration, combat, boss, indoor, aerial, and accessibility framing are
+reviewed camera modes with bounded transitions, not unrelated camera
+implementations. Manual orbit remains available in ordinary play. Automated
+framing may assist readability but cannot constantly fight player input, snap
+without cause, or conceal authoritative corrections.
 
 The initial vertical slice proves:
 
@@ -151,6 +160,16 @@ performance budgets. Endless repetition of a small tile set is not accepted.
   authoritative movement.
 - VFX are pooled, priority-limited, distance-limited, and reduced before
   telegraph clarity is compromised.
+- Character acceptance includes topology/deformation, foot contact, locomotion
+  blending, turning, facial expression, secondary motion, material separation,
+  gameplay-camera readability, and mobile quality review.
+- Flat AI cutouts, independently generated pose sequences, rigid translations,
+  foot sliding, waxy/plastic materials, uniform highlights, and one-expression
+  characters are prototype-only and cannot be presented as released quality.
+- Modern stylized action RPGs are a quality reference for camera feel,
+  animation continuity, character appeal, world depth, and combat response.
+  TitanCore must retain original characters, worlds, story, materials, effects,
+  audio, interface, and visual identity.
 
 ## Performance Contract
 

@@ -140,6 +140,41 @@ Critical assets include player, boss, map, collision reference, telegraph, and
 required UI readability assets. A manifest with a missing critical asset cannot
 be published.
 
+### Stylized 3D Runtime Assets
+
+Released worlds use reviewed glTF/GLB assets and named skeletal animation clips.
+
+```text
+concept and silhouette review
+  -> model and topology review
+  -> UV and material authoring
+  -> rig and socket validation
+  -> animation and deformation review
+  -> LOD and collision generation
+  -> texture and geometry optimization
+  -> gameplay-camera preview
+  -> desktop and mobile performance review
+  -> immutable upload and metadata
+  -> human publication
+```
+
+- AI-generated images may guide concept exploration but are not runtime meshes,
+  rigs, animation clips, materials, or proof of production quality.
+- No workflow may convert an unrelated set of generated still poses into a
+  released character animation.
+- Models use consistent units, axes, origins, naming, skeleton conventions,
+  sockets, bounds, and animation clip contracts.
+- Runtime packages contain no editor history, source credentials, embedded
+  external URLs, executable scripts, or unreviewed extensions.
+- LODs, collision proxies, navigation proxies, light or vertex data, texture
+  sizes, morph targets, skin influences, bones, triangles, materials, and draw
+  calls are validated against tier-specific budgets.
+- Texture or geometry compression requires reviewed browser decoder support,
+  fallback behavior, licensing, and bundle measurements.
+- Preview tooling shows neutral lighting, world lighting, orbit camera,
+  animation, deformation, materials, LOD transitions, bounds, sockets, and
+  mobile quality mode.
+
 ## Optimization
 
 - Preserve an approved lossless master outside runtime delivery.
