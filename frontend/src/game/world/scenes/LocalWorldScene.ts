@@ -23,6 +23,11 @@ import {
   selectTargets,
   type CombatFeelSkill,
 } from '../combatFeel';
+import {
+  advanceEnemyBehavior,
+  SPROUT_BEHAVIOR,
+  type EnemyBehavior,
+} from '../enemyBehavior';
 
 type MetricsCallback = (metrics: WorldRuntimeMetrics) => void;
 type StatusCallback = (status: WorldRuntimeStatus) => void;
@@ -44,6 +49,10 @@ type LocalTarget = {
   maxHp: number;
   baseScale: number;
   respawnAt: number;
+  spawnX: number;
+  spawnY: number;
+  behavior: EnemyBehavior;
+  telegraph?: Phaser.GameObjects.Ellipse;
 };
 
 export class LocalWorldScene extends Phaser.Scene {
@@ -71,6 +80,8 @@ export class LocalWorldScene extends Phaser.Scene {
   private readonly cooldownReadyAt = new Map<InputAction, number>();
   private actionLockedUntil = 0;
   private combatHud?: Phaser.GameObjects.Text;
+  private playerHp = 100;
+  private playerInvulnerableUntil = 0;
   private readonly targets: LocalTarget[] = [];
   private foregroundMist?: Phaser.GameObjects.Container;
   private windRings: Array<{
@@ -154,6 +165,13 @@ export class LocalWorldScene extends Phaser.Scene {
           maxHp: 100,
           baseScale: entity.scale,
           respawnAt: 0,
+          spawnX: entity.x,
+          spawnY: entity.y,
+          behavior: {
+            state: 'PATROL',
+            stateUntil: 0,
+            patrolDirection: entity.frame % 2 === 0 ? 1 : -1,
+          },
         });
       }
     });
@@ -236,6 +254,7 @@ export class LocalWorldScene extends Phaser.Scene {
     const pressedActions = newlyPressedActions(input.actions, this.previousActions);
     this.previousActions = new Set(input.actions);
     this.tryCombatAction(pressedActions);
+    this.simulateEnemies(stepMs);
     const dodgePressed = input.actions.has('DODGE');
     const dodgeStarted = dodgePressed && !this.dodgeWasPressed;
     this.dodgeWasPressed = dodgePressed;
@@ -315,6 +334,85 @@ export class LocalWorldScene extends Phaser.Scene {
     });
   }
 
+  private simulateEnemies(stepMs: number) {
+    if (!this.heroAnchor) return;
+    const deltaSeconds = stepMs / 1000;
+    this.targets.forEach((target) => {
+      if (target.respawnAt > 0) return;
+      const dx = this.heroAnchor!.x - target.sprite.x;
+      const dy = this.heroAnchor!.y - target.sprite.y;
+      const distanceToHero = Math.hypot(dx, dy);
+      const distanceFromSpawn = Math.hypot(
+        target.sprite.x - target.spawnX,
+        target.sprite.y - target.spawnY,
+      );
+      const result = advanceEnemyBehavior(
+        target.behavior,
+        this.simulationTime,
+        distanceToHero,
+        distanceFromSpawn,
+      );
+      const previousState = target.behavior.state;
+      target.behavior = result.behavior;
+      if (target.behavior.state === 'PATROL') {
+        target.sprite.x += target.behavior.patrolDirection
+          * SPROUT_BEHAVIOR.patrolSpeed * deltaSeconds;
+        target.sprite.setFlipX(target.behavior.patrolDirection < 0);
+      } else if (target.behavior.state === 'CHASE' && distanceToHero > 0) {
+        target.sprite.x += (dx / distanceToHero) * SPROUT_BEHAVIOR.chaseSpeed * deltaSeconds;
+        target.sprite.y += (dy / distanceToHero) * SPROUT_BEHAVIOR.chaseSpeed * deltaSeconds;
+        target.sprite.setFlipX(dx < 0);
+      }
+      if (target.behavior.state === 'TELEGRAPH' && previousState !== 'TELEGRAPH') {
+        this.showEnemyTelegraph(target);
+      }
+      if (result.attack) {
+        target.telegraph?.destroy();
+        target.telegraph = undefined;
+        if (distanceToHero <= SPROUT_BEHAVIOR.attackRange + 18) {
+          this.applyPlayerHit(target);
+        }
+      }
+    });
+  }
+
+  private showEnemyTelegraph(target: LocalTarget) {
+    target.telegraph?.destroy();
+    const reducedMotion = this.registry.get('reducedMotion') === true;
+    target.telegraph = this.add
+      .ellipse(target.sprite.x, target.sprite.y + 6, 128, 52, 0xff526e, 0.18)
+      .setStrokeStyle(4, 0xff8b57, 0.92)
+      .setDepth(940 + target.sprite.y);
+    this.tweens.add({
+      targets: target.telegraph,
+      scaleX: reducedMotion ? 1 : 0.72,
+      scaleY: reducedMotion ? 1 : 0.72,
+      alpha: reducedMotion ? 0.5 : 0.82,
+      yoyo: true,
+      repeat: reducedMotion ? 0 : 2,
+      duration: reducedMotion ? SPROUT_BEHAVIOR.telegraphMs : 210,
+    });
+  }
+
+  private applyPlayerHit(target: LocalTarget) {
+    if (!this.heroAnchor || !this.heroVisual
+      || this.simulationTime < this.playerInvulnerableUntil) return;
+    this.playerHp = Math.max(0, this.playerHp - SPROUT_BEHAVIOR.damage);
+    this.playerInvulnerableUntil = this.simulationTime + 720;
+    const direction = Math.sign(this.heroAnchor.x - target.sprite.x) || 1;
+    this.heroAnchor.x = Phaser.Math.Clamp(this.heroAnchor.x + direction * 34, 0, 5120);
+    this.heroVisual.setTintFill(0xff8c93);
+    this.time.delayedCall(120, () => this.heroVisual?.clearTint());
+    this.cameras.main.shake(
+      this.registry.get('reducedMotion') === true ? 40 : 95,
+      this.registry.get('reducedMotion') === true ? 0.0005 : 0.0018,
+    );
+    if (this.playerHp === 0) {
+      this.playerHp = 100;
+      this.heroAnchor.setPosition(620, 594);
+    }
+  }
+
   private spawnSkillEffect(skill: CombatFeelSkill) {
     if (!this.heroAnchor || !this.heroVisual) return;
     const reducedMotion = this.registry.get('reducedMotion') === true;
@@ -381,6 +479,9 @@ export class LocalWorldScene extends Phaser.Scene {
     });
     if (target.hp === 0) {
       target.respawnAt = this.simulationTime + 2600;
+      target.behavior = { ...target.behavior, state: 'DEFEATED' };
+      target.telegraph?.destroy();
+      target.telegraph = undefined;
       target.sprite.setVisible(false);
       target.hpBack.setVisible(false);
       target.hpFill.setVisible(false);
@@ -393,6 +494,8 @@ export class LocalWorldScene extends Phaser.Scene {
       if (target.respawnAt > 0 && this.simulationTime >= target.respawnAt) {
         target.hp = target.maxHp;
         target.respawnAt = 0;
+        target.sprite.setPosition(target.spawnX, target.spawnY);
+        target.behavior = { state: 'PATROL', stateUntil: 0, patrolDirection: 1 };
         target.sprite
           .setVisible(true)
           .clearTint()
@@ -416,15 +519,18 @@ export class LocalWorldScene extends Phaser.Scene {
         .setPosition(target.sprite.x - 34, target.sprite.y - 104 * scale)
         .setDisplaySize(68 * (target.hp / target.maxHp), 4)
         .setDepth(2001 + target.sprite.y);
+      target.telegraph?.setPosition(target.sprite.x, target.sprite.y + 6)
+        .setDepth(940 + target.sprite.y);
     });
     if (this.combatHud) {
-      this.combatHud.setText(COMBAT_FEEL_SKILLS.map((skill) => {
+      const skills = COMBAT_FEEL_SKILLS.map((skill) => {
         const remaining = Math.max(
           0,
           (this.cooldownReadyAt.get(skill.action) ?? 0) - this.simulationTime,
         );
         return remaining === 0 ? `${skill.label} READY` : `${skill.label} ${(remaining / 1000).toFixed(1)}`;
-      }).join('  |  '));
+      }).join('  |  ');
+      this.combatHud.setText(`HP ${this.playerHp}/100  |  ${skills}`);
     }
   }
 
@@ -629,6 +735,9 @@ export class LocalWorldScene extends Phaser.Scene {
     this.cooldownReadyAt.clear();
     this.actionLockedUntil = 0;
     this.combatHud = undefined;
+    this.playerHp = 100;
+    this.playerInvulnerableUntil = 0;
+    this.targets.forEach((target) => target.telegraph?.destroy());
     this.targets.length = 0;
     this.elevation = 0;
     this.clock.reset();

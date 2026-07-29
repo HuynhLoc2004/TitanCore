@@ -70,7 +70,7 @@ describe('WorldRuntimePage', () => {
     expect(metrics).toHaveTextContent('4 screens');
     expect(metrics).toHaveTextContent('5 regions');
     expect(metrics).toHaveTextContent('HIGH');
-    expect(screen.getByText(/local combat-feel proof only/i)).toBeInTheDocument();
+    expect(screen.getByText(/local enemy-behavior proof only/i)).toBeInTheDocument();
     expect(screen.getByText(/damage, loot and multiplayer authority are not server-backed/i))
       .toBeInTheDocument();
   });
