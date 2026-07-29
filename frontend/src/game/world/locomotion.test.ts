@@ -29,4 +29,9 @@ describe('Core Raider locomotion contract', () => {
       repeat: 0,
     });
   });
+
+  it('uses a coherent forward run sequence without jumping back into a walk frame', () => {
+    expect(CORE_RAIDER_ANIMATIONS.run.frames).toEqual([4, 5, 6, 7]);
+    expect(new Set(CORE_RAIDER_ANIMATIONS.run.frames).size).toBe(4);
+  });
 });
