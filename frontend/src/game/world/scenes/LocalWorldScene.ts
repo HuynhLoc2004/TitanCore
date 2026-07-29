@@ -89,6 +89,8 @@ export class LocalWorldScene extends Phaser.Scene {
   private previousActions = new Set<InputAction>();
   private readonly cooldownReadyAt = new Map<InputAction, number>();
   private actionLockedUntil = 0;
+  private movementImpulseX = 0;
+  private movementImpulseUntil = 0;
   private combatHud?: Phaser.GameObjects.Text;
   private playerHp = 100;
   private playerInvulnerableUntil = 0;
@@ -141,6 +143,7 @@ export class LocalWorldScene extends Phaser.Scene {
         );
         this.physics.add.existing(this.heroAnchor);
         const body = this.heroAnchor.body as Phaser.Physics.Arcade.Body;
+        body.setSize(42, 22);
         body.setCollideWorldBounds(true);
         this.heroShadow = this.add
           .ellipse(entity.x, entity.y + 3, 76, 24, 0x06101c, 0.34)
@@ -275,8 +278,12 @@ export class LocalWorldScene extends Phaser.Scene {
     const dodgeStarted = dodgePressed && !this.dodgeWasPressed;
     this.dodgeWasPressed = dodgePressed;
     const body = this.heroAnchor.body as Phaser.Physics.Arcade.Body;
+    const impulseX = this.simulationTime < this.movementImpulseUntil
+      ? this.movementImpulseX
+      : 0;
+    if (impulseX === 0) this.movementImpulseX = 0;
     body.setVelocity(
-      input.moveX * manifest.navigation.moveSpeed,
+      input.moveX * manifest.navigation.moveSpeed + impulseX,
       input.moveY * manifest.navigation.moveSpeed,
     );
     if (input.moveX !== 0) this.heroVisual.setFlipX(input.moveX < 0);
@@ -334,7 +341,8 @@ export class LocalWorldScene extends Phaser.Scene {
     this.heroVisual.play(HERO_ATTACK_ANIMATION, true);
     const facing = this.heroVisual.flipX ? -1 : 1;
     if (skill.action === 'SKILL_1' && this.heroAnchor) {
-      this.heroAnchor.x = Phaser.Math.Clamp(this.heroAnchor.x + facing * 38, 0, 5120);
+      this.movementImpulseX = facing * 410;
+      this.movementImpulseUntil = this.simulationTime + 110;
     }
     this.spawnSkillEffect(skill);
     const selected = selectTargets(
@@ -440,7 +448,8 @@ export class LocalWorldScene extends Phaser.Scene {
     this.playerHp = Math.max(0, this.playerHp - target.profile.damage);
     this.playerInvulnerableUntil = this.simulationTime + 720;
     const direction = Math.sign(this.heroAnchor.x - target.sprite.x) || 1;
-    this.heroAnchor.x = Phaser.Math.Clamp(this.heroAnchor.x + direction * 34, 0, 5120);
+    this.movementImpulseX = direction * 330;
+    this.movementImpulseUntil = this.simulationTime + 125;
     this.heroVisual.setTintFill(0xff8c93);
     this.time.delayedCall(120, () => this.heroVisual?.clearTint());
     this.cameras.main.shake(
@@ -717,6 +726,8 @@ export class LocalWorldScene extends Phaser.Scene {
   }
 
   private createTraversalGeometry(manifest: WorldManifest) {
+    const showCollisionGeometry = new URLSearchParams(window.location.search)
+      .get('collisionDebug') === '1';
     manifest.collision.forEach((definition) => {
       const obstacle = this.add.zone(
         definition.x,
@@ -726,6 +737,19 @@ export class LocalWorldScene extends Phaser.Scene {
       );
       this.physics.add.existing(obstacle, true);
       if (this.heroAnchor) this.physics.add.collider(this.heroAnchor, obstacle);
+      if (showCollisionGeometry) {
+        this.add
+          .rectangle(
+            definition.x,
+            definition.y,
+            definition.width,
+            definition.height,
+            0xff4f78,
+            0.16,
+          )
+          .setStrokeStyle(2, 0xff8ca4, 0.9)
+          .setDepth(4900);
+      }
     });
     manifest.elevationZones.forEach((zone) => {
       const ring = this.add
@@ -823,6 +847,8 @@ export class LocalWorldScene extends Phaser.Scene {
     this.previousActions.clear();
     this.cooldownReadyAt.clear();
     this.actionLockedUntil = 0;
+    this.movementImpulseX = 0;
+    this.movementImpulseUntil = 0;
     this.combatHud = undefined;
     this.playerHp = 100;
     this.playerInvulnerableUntil = 0;
