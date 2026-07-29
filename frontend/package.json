@@ -14,6 +14,7 @@
     "phaser": "3.90.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "three": "0.179.1",
     "unicode-segmenter": "^0.17.1"
   },
   "devDependencies": {
@@ -22,6 +23,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
+    "@types/three": "0.179.0",
     "autoprefixer": "^10.4.20",
     "jsdom": "^29.1.1",
     "postcss": "^8.4.47",
