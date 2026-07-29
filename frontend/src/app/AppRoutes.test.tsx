@@ -12,6 +12,9 @@ vi.mock('../game/AnimationLabPage', () => ({
 vi.mock('../game/WorldRuntimePage', () => ({
   WorldRuntimePage: () => <h1>Raid Camp Local Khu</h1>,
 }));
+vi.mock('../game/ThreeWorldPage', () => ({
+  ThreeWorldPage: () => <h1>Zephyr Frontier 3D</h1>,
+}));
 
 const user = {
   id: '3d2c4040-66f6-45b7-9235-1d5d7a4d4586',
@@ -183,6 +186,15 @@ describe('auth routes', () => {
     expect(window.location.pathname).toBe('/world-lab');
   });
 
+  it('protects the Three.js world proof behind authentication and onboarding', async () => {
+    installSessionFor(user);
+    renderApp('/world-3d-lab');
+
+    expect(await screen.findByRole('heading', { name: /zephyr frontier 3d/i }))
+      .toBeInTheDocument();
+    expect(window.location.pathname).toBe('/world-3d-lab');
+  });
+
   it('does not initialize the local world runtime for an anonymous player', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = String(input);
@@ -196,6 +208,23 @@ describe('auth routes', () => {
 
     expect(await screen.findByRole('heading', { name: /enter the camp/i })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /raid camp local khu/i })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('does not initialize the Three.js world proof for an anonymous player', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/csrf')) {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+
+    renderApp('/world-3d-lab');
+
+    expect(await screen.findByRole('heading', { name: /enter the camp/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /zephyr frontier 3d/i }))
+      .not.toBeInTheDocument();
     expect(window.location.pathname).toBe('/login');
   });
 

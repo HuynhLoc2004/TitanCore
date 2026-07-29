@@ -12,6 +12,9 @@ const AnimationLabPage = lazy(() => import('../game/AnimationLabPage').then((mod
 const WorldRuntimePage = lazy(() => import('../game/WorldRuntimePage').then((module) => ({
   default: module.WorldRuntimePage,
 })));
+const ThreeWorldPage = lazy(() => import('../game/ThreeWorldPage').then((module) => ({
+  default: module.ThreeWorldPage,
+})));
 
 type Route =
   | '/login'
@@ -20,6 +23,7 @@ type Route =
   | '/app'
   | '/animation-lab'
   | '/world-lab'
+  | '/world-3d-lab'
   | '/auth/oauth/callback';
 
 function currentRoute(): Route {
@@ -38,6 +42,9 @@ function currentRoute(): Route {
   }
   if (path === '/world-lab') {
     return '/world-lab';
+  }
+  if (path === '/world-3d-lab') {
+    return '/world-3d-lab';
   }
   if (path === '/onboarding') {
     return '/onboarding';
@@ -81,7 +88,8 @@ export function AppRoutes() {
         && (route === '/app'
           || route === '/onboarding'
           || route === '/animation-lab'
-          || route === '/world-lab')) {
+          || route === '/world-lab'
+          || route === '/world-3d-lab')) {
       const redirectKey = `${route}:/login`;
       if (redirectRef.current !== redirectKey) {
         redirectRef.current = redirectKey;
@@ -96,7 +104,8 @@ export function AppRoutes() {
           && route !== '/app'
           && route !== '/onboarding'
           && route !== '/animation-lab'
-          && route !== '/world-lab')) {
+          && route !== '/world-lab'
+          && route !== '/world-3d-lab')) {
       redirectRef.current = null;
     }
   }, [route, status, user]);
@@ -142,11 +151,22 @@ export function AppRoutes() {
     );
   }
 
+  if (route === '/world-3d-lab' && status === 'authenticated' && user) {
+    return (
+      <Suspense fallback={<WorldRuntimeLoadingScreen />}>
+        <ThreeWorldPage />
+      </Suspense>
+    );
+  }
+
   return <LoginPage onRegister={() => navigate('/register')} />;
 }
 
 function isCompletedProfileRoute(route: Route) {
-  return route === '/app' || route === '/animation-lab' || route === '/world-lab';
+  return route === '/app'
+    || route === '/animation-lab'
+    || route === '/world-lab'
+    || route === '/world-3d-lab';
 }
 
 function AnimationLabLoadingScreen() {
