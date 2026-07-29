@@ -4,7 +4,7 @@
 
 This document defines the owner-approved Phase 5.0 realtime world model. It is
 architecture guidance only. It does not approve migrations, APIs, WebSocket
-handlers, Redis scripts, Phaser scenes, monsters, combat formulas, production
+handlers, Redis scripts, renderer scenes, monsters, combat formulas, production
 assets, audio, or Admin implementation.
 
 TitanCore is a chain of connected realtime hunting worlds, not a sequence of
@@ -28,9 +28,9 @@ Each world owns a coherent content set:
 - NPC cast, quests, resources, items, and rewards;
 - World Gates and server-owned progression requirements.
 
-The world graph is published, versioned data. React and Phaser may render only
-registered destinations and interactions; remote content cannot inject routes,
-commands, permissions, scripts, or combat rules.
+The world graph is published, versioned data. React and the approved world
+renderer may render only registered destinations and interactions; remote
+content cannot inject routes, commands, permissions, scripts, or combat rules.
 
 Map transition is an in-world action:
 
@@ -48,35 +48,31 @@ approach World Gate
 The client cannot claim that a world is unlocked. A failed transfer leaves the
 player safely in the source world or returns to a recoverable route.
 
-## Approved 2.5D World Presentation
+## Approved Stylized 3D World Presentation
 
-TitanCore uses a layered 2.5D presentation in Phaser rather than a second 3D
-engine. This preserves the illustrated cartoon direction and mobile budget
-while giving long maps readable depth.
+TitanCore uses a stylized Three.js world with a third-person orbit camera. The
+camera supports 360-degree yaw, bounded pitch and zoom, and collision-aware
+framing. This replaces the earlier fixed 2.5D presentation decision.
 
-- Ground coordinates remain the navigation and collision authority.
-- Character sprites, shadows, foreground occluders, mist, and distant layers
-  are separate presentation objects.
-- Y-depth sorting determines whether an entity renders in front of or behind a
-  reviewed prop boundary.
+- World coordinates, terrain, navigation surfaces, collision volumes, and
+  server-approved traversal state define movement legality.
+- Characters, monsters, bosses, NPCs, props, terrain, particles, shadows, fog,
+  water, foliage, and distant landmarks are separate bounded scene systems.
 - Data-defined obstacles prevent traversal through walls, cliffs, structures,
   supplies, and other solid landmarks.
-- Elevation zones such as wind lifts may visually raise a character while its
-  ground anchor remains authoritative.
-- A visual jump, hover, bridge, or lift never grants passage through a blocked
-  ground route unless the server-approved traversal rule also permits it.
-- Camera look-ahead and parallax communicate depth but never move collision or
-  disguise a reconciliation correction.
+- Jump, fall, glide, hover, lift, and future flight states have explicit
+  authoritative rules. Visual elevation alone grants no movement privilege.
+- Camera orbit never changes collision authority or hides reconciliation.
+- Skeletal animation and bounded secondary motion replace static-cutout
+  locomotion for released heroes and creatures.
 
-Large worlds are composed from bounded streamed chunks and reviewed transition
-seams. They are not delivered as one unbounded texture or loaded in full before
-entry. The local Phase 5.2 proof may use a repeated temporary background while
-collision, elevation, streaming, and asset-layer contracts are verified; that
-background is not approved final map art.
+Large worlds are composed from bounded streamed 3D chunks and reviewed
+transition zones. They are not delivered as one monolithic scene or loaded in
+full before entry. Each Khu pins published map, content, and asset versions.
+Chunk loading cannot move authority or expose an unloaded traversal path.
 
-True 3D terrain, unrestricted flight, and a second renderer are deferred. They
-require separate asset, performance, input, authority, and mobile acceptance
-decisions.
+The Phase 5 Phaser world remains a prototype/reference and is not approved final
+map presentation.
 
 ## Approved World Model
 

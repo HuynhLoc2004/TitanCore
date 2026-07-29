@@ -20,7 +20,7 @@
 ## Frontend
 
 - React owns UI screens and state.
-- Phaser owns game rendering.
+- Three.js owns released world rendering. Phaser remains isolated prototype
+  code until its useful contracts are migrated.
 - WebSocket clients send intentions only.
 - Never trust client-side damage, rewards, boss HP, or ranking values.
-

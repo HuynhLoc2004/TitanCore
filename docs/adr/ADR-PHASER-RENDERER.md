@@ -1,8 +1,12 @@
 # ADR: Phaser 3 Combat Renderer
 
-- Status: Accepted
+- Status: Superseded for released world gameplay
 - Scope: Phase 4 visual and game-shell architecture
 - Decision owner: TitanCore Project Owner
+- Superseded by: `ADR-THREEJS-3D-WORLD-RENDERER.md`
+
+This ADR remains the historical decision and contract for the Phase 4/5 Phaser
+prototype. It no longer defines TitanCore's primary released-world renderer.
 
 ## Context
 

@@ -21,7 +21,7 @@ players. Future room limits must be configurable and validated by the server.
 - published shell configuration and registered-section composition;
 - mounting and disposing the stable combat host.
 
-### Phaser Owns
+### World Renderer Owns
 
 - combat scenes, cameras, rendering, and input sampling;
 - character, boss, map, projectile, telegraph, and VFX presentation;
@@ -37,7 +37,7 @@ players. Future room limits must be configurable and validated by the server.
 - attack validation and idempotency;
 - active-room content version and asset-manifest pinning.
 
-Phaser sends intentions only. It must never calculate trusted damage, rewards,
+The world renderer sends intentions only. It must never calculate trusted damage, rewards,
 boss life, cooldown completion, or durable ranking.
 
 ## Stable GameHost
@@ -74,11 +74,11 @@ React route and session
   -> GameHost loads the immutable asset manifest
   -> authenticated WebSocket joins the room
   -> normalized events feed React summaries and Phaser systems
-  -> Phaser sends movement, attack, and skill intentions
+  -> world renderer sends movement, attack, and skill intentions
 ```
 
 React state updates must not run at the render-frame frequency. The WebSocket
-gateway normalizes messages once. Phaser consumes high-frequency room events;
+gateway normalizes messages once. Three.js consumes high-frequency room events;
 React consumes bounded summaries such as connection state, room result, and
 accessible announcements.
 
