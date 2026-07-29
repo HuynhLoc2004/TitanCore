@@ -3,8 +3,9 @@
 ## Status And Scope
 
 This document defines the approved visual foundation for TitanCore, a premium
-2D browser co-op boss game. It is a design contract, not approval to implement
-UI, assets, audio, Phaser scenes, APIs, database migrations, or Admin tools.
+stylized 3D browser co-op action game. It is a design contract, not approval to
+implement UI, assets, audio, renderer scenes, APIs, database migrations, or
+Admin tools.
 
 The intended tone is colorful cartoon boss comedy: expressive, polished,
 fast to understand, and funny without sacrificing combat readability.
@@ -113,6 +114,53 @@ telegraphs require visual validation against every approved map palette.
 - Cosmetics may alter approved visual slots but must not hide telegraphs,
   collision readability, or player identity.
 
+### 3D Character Quality Gate
+
+TitanCore targets the polish and responsiveness expected of a modern stylized
+third-person action RPG without copying another game's characters, costumes,
+models, animations, world art, effects, audio, story, or interface.
+
+Released characters are authored 3D assets, not flat AI images extruded into a
+scene:
+
+- clean topology and deformation loops support shoulders, elbows, wrists,
+  hips, knees, ankles, face, hair, capes, and equipment;
+- a reviewed humanoid rig uses consistent scale, axes, root, hips, feet, hands,
+  weapon sockets, camera target, hit anchors, and VFX anchors;
+- feet use contact-aware placement or reviewed inverse kinematics so slopes and
+  steps do not produce skating, hovering, or terrain penetration;
+- locomotion blends idle, start, acceleration, walk, run, sprint, strafe, turn,
+  stop, jump, apex, fall, land, glide, hover, and recovery without abrupt pose
+  popping;
+- upper-body action layers may blend over locomotion without disconnecting the
+  torso, weapon, hands, or facing;
+- cloth, hair, ribbons, tails, capes, charms, and loose equipment use bounded
+  secondary motion with stable collision and quality-tier fallbacks;
+- faces support eye direction, blinking, brows, mouth shapes, emotional idles,
+  combat effort, hit reaction, victory, and story expressions;
+- silhouettes and expressions remain readable at the actual gameplay camera
+  distance rather than only in close-up renders.
+
+Plastic-looking output is rejected when it results from uniform roughness,
+flat lighting, waxy skin, identical material response, excessive specular
+highlights, missing contact shadows, or unrelated generated textures.
+
+Material response remains stylized but physically coherent:
+
+- skin, hair, cloth, leather, painted metal, polished metal, stone, foliage,
+  magic, and translucent effects have distinct reviewed responses;
+- toon ramps and controlled highlights preserve volume and facial readability;
+- ambient, key, rim, contact, and environment lighting support the scene without
+  washing every surface with the same highlight;
+- outlines are selective and distance-aware rather than a thick uniform stroke
+  around every object;
+- color grading is world-specific, bounded, and never destroys skin tone,
+  telegraph, rarity, or team readability.
+
+Each hero requires a turntable, gameplay-distance review, animation review,
+material review, mobile quality review, and silhouette comparison against the
+approved roster before publication.
+
 ## Boss Language
 
 - Bosses occupy approximately three to six times the visual mass of a player.
@@ -134,6 +182,18 @@ Maps use three visual value layers:
 The background must remain quieter than combat. Collision, safe areas, and
 hazards must be readable on low-end displays and under reduced VFX quality.
 Map definitions and art are published content, not React component constants.
+
+Stylized 3D maps require authored composition at player scale:
+
+- terrain has readable paths, elevation, sight lines, landmarks, vertical
+  routes, discoveries, and framing from the orbit camera;
+- architecture, foliage, water, weather, creatures, NPC activity, particles,
+  cloth, fire, and distant silhouettes provide layered ambient motion;
+- the world must not resemble a static image wrapped around a flat arena;
+- props and landmarks use material variation, contact, wear, color hierarchy,
+  and scale cues rather than glossy uniform surfaces;
+- camera rotation must retain attractive compositions and traversal clarity
+  from every reachable direction, not only one promotional angle.
 
 ## Item And Rarity Language
 
@@ -168,6 +228,14 @@ thumbnails must not reuse low-resolution lobby thumbnails.
 - Animation timing follows gameplay state but does not establish authority.
 - Hidden or sleeping scenes stop decorative animation and release listeners.
 - Animation must be tested at 60fps and at the 30fps degraded-quality target.
+- Skills follow anticipation, release, travel, impact, reaction, and recovery.
+- Aerial actions communicate lift, hang time, direction, momentum, cloth/hair
+  response, landing weight, and authoritative movement limits.
+- Multiplayer effect priority preserves the local hero, nearby threats,
+  telegraphs, confirmed impacts, and boss state before decorative spectacle.
+- Hit stop, camera impulse, controller vibration, sound transient, character
+  reaction, particles, decals, and damage presentation are coordinated but
+  individually bounded.
 
 ## Audio
 
