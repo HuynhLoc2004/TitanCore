@@ -85,6 +85,7 @@ export function selectTargets(
   candidates: readonly CombatTargetPoint[],
   range: number,
   area: boolean,
+  facingX = 0,
 ) {
   const inRange = candidates
     .filter((target) => target.active)
@@ -93,6 +94,7 @@ export function selectTargets(
       distance: Math.hypot(target.x - origin.x, target.y - origin.y),
     }))
     .filter(({ distance }) => distance <= range)
+    .filter(({ target }) => area || facingX === 0 || (target.x - origin.x) * facingX >= 0)
     .sort((left, right) => left.distance - right.distance
       || left.target.id.localeCompare(right.target.id));
   return area ? inRange.map(({ target }) => target) : inRange.slice(0, 1).map(({ target }) => target);

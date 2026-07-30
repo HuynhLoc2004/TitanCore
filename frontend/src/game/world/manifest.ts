@@ -2,6 +2,11 @@ export type WorldAssetKind = 'IMAGE' | 'SPRITESHEET';
 export type WorldEntityKind = 'HERO' | 'MONSTER';
 export type WorldRegionKind = 'SAFE_HUB' | 'HUNTING' | 'EVENT' | 'BOSS' | 'EXIT_GATE';
 export type ElevationZoneKind = 'WIND_LIFT';
+export type EntityBehaviorProfile =
+  | 'HERO'
+  | 'SPROUT_SCOUT'
+  | 'SPROUT_BRUISER'
+  | 'SPROUT_WARDEN';
 
 type WorldAssetBase = {
   key: string;
@@ -48,6 +53,7 @@ export type WorldEntityDefinition = {
   frame: number;
   scale: number;
   depth: number;
+  behaviorProfile: EntityBehaviorProfile;
 };
 
 export type WorldCollisionDefinition = {
@@ -65,7 +71,7 @@ export type WorldElevationZoneDefinition = WorldCollisionDefinition & {
 };
 
 export type WorldManifest = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   world: {
     id: string;
     version: number;
@@ -121,7 +127,7 @@ export function parseWorldManifest(value: unknown): WorldManifest {
     ],
     'manifest',
   );
-  if (manifest.schemaVersion !== 2) {
+  if (manifest.schemaVersion !== 3) {
     throw new WorldManifestError('Unsupported world manifest schema version.');
   }
 
@@ -191,7 +197,7 @@ export function parseWorldManifest(value: unknown): WorldManifest {
   }
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     world,
     navigation,
     regions,
@@ -357,18 +363,28 @@ function parseEntity(value: unknown, index: number): WorldEntityDefinition {
   const entity = requireRecord(value, label);
   requireExactKeys(
     entity,
-    ['id', 'kind', 'assetKey', 'x', 'y', 'frame', 'scale', 'depth'],
+    ['id', 'kind', 'assetKey', 'x', 'y', 'frame', 'scale', 'depth', 'behaviorProfile'],
     label,
   );
+  const kind = requireEnum(entity.kind, ['HERO', 'MONSTER'] as const, `${label}.kind`);
+  const behaviorProfile = requireEnum(
+    entity.behaviorProfile,
+    ['HERO', 'SPROUT_SCOUT', 'SPROUT_BRUISER', 'SPROUT_WARDEN'] as const,
+    `${label}.behaviorProfile`,
+  );
+  if ((kind === 'HERO') !== (behaviorProfile === 'HERO')) {
+    throw new WorldManifestError(`${label}.behaviorProfile does not match entity kind.`);
+  }
   return {
     id: requireId(entity.id, `${label}.id`),
-    kind: requireEnum(entity.kind, ['HERO', 'MONSTER'] as const, `${label}.kind`),
+    kind,
     assetKey: requireId(entity.assetKey, `${label}.assetKey`),
     x: requireNumber(entity.x, 0, 16_384, `${label}.x`),
     y: requireNumber(entity.y, 0, 16_384, `${label}.y`),
     frame: requireInteger(entity.frame, 0, 4096, `${label}.frame`),
     scale: requireNumber(entity.scale, 0.05, 4, `${label}.scale`),
     depth: requireNumber(entity.depth, -1000, 1000, `${label}.depth`),
+    behaviorProfile,
   };
 }
 

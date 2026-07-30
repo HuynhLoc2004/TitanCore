@@ -3,7 +3,7 @@ import { parseWorldManifest, WorldManifestError } from './manifest';
 
 function validManifest() {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     world: {
       id: 'test-world',
       version: 1,
@@ -73,6 +73,7 @@ function validManifest() {
         frame: 0,
         scale: 1,
         depth: 10,
+        behaviorProfile: 'HERO',
       },
     ],
     ambient: {
@@ -92,6 +93,12 @@ describe('parseWorldManifest', () => {
       kind: 'SPRITESHEET',
       frameWidth: 128,
     });
+  });
+
+  it('requires a behavior profile compatible with entity kind', () => {
+    const mismatched = validManifest();
+    mismatched.entities[0].behaviorProfile = 'SPROUT_SCOUT';
+    expect(() => parseWorldManifest(mismatched)).toThrow(/does not match entity kind/);
   });
 
   it('rejects remote URLs and unknown executable-style fields', () => {

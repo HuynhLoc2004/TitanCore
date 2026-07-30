@@ -6,7 +6,18 @@ export type EnemyBehavior = {
   patrolDirection: -1 | 1;
 };
 
-export const SPROUT_BEHAVIOR = {
+export type EnemyBehaviorTuning = {
+  aggroRange: number;
+  attackRange: number;
+  leashRange: number;
+  patrolRadius: number;
+  patrolSpeed: number;
+  chaseSpeed: number;
+  telegraphMs: number;
+  recoverMs: number;
+};
+
+export const SPROUT_BEHAVIOR: EnemyBehaviorTuning & { damage: number } = {
   aggroRange: 430,
   attackRange: 118,
   leashRange: 620,
@@ -23,13 +34,14 @@ export function advanceEnemyBehavior(
   now: number,
   distanceToHero: number,
   distanceFromSpawn: number,
+  tuning: EnemyBehaviorTuning = SPROUT_BEHAVIOR,
 ): { behavior: EnemyBehavior; attack: boolean } {
   if (behavior.state === 'DEFEATED') return { behavior, attack: false };
   if (behavior.state === 'PATROL') {
-    if (distanceToHero <= SPROUT_BEHAVIOR.aggroRange) {
+    if (distanceToHero <= tuning.aggroRange) {
       return { behavior: { ...behavior, state: 'CHASE' }, attack: false };
     }
-    if (distanceFromSpawn >= SPROUT_BEHAVIOR.patrolRadius) {
+    if (distanceFromSpawn >= tuning.patrolRadius) {
       return {
         behavior: { ...behavior, patrolDirection: behavior.patrolDirection === 1 ? -1 : 1 },
         attack: false,
@@ -37,15 +49,15 @@ export function advanceEnemyBehavior(
     }
   }
   if (behavior.state === 'CHASE') {
-    if (distanceFromSpawn > SPROUT_BEHAVIOR.leashRange) {
+    if (distanceFromSpawn > tuning.leashRange) {
       return { behavior: { ...behavior, state: 'PATROL' }, attack: false };
     }
-    if (distanceToHero <= SPROUT_BEHAVIOR.attackRange) {
+    if (distanceToHero <= tuning.attackRange) {
       return {
         behavior: {
           ...behavior,
           state: 'TELEGRAPH',
-          stateUntil: now + SPROUT_BEHAVIOR.telegraphMs,
+          stateUntil: now + tuning.telegraphMs,
         },
         attack: false,
       };
@@ -56,7 +68,7 @@ export function advanceEnemyBehavior(
       behavior: {
         ...behavior,
         state: 'RECOVER',
-        stateUntil: now + SPROUT_BEHAVIOR.recoverMs,
+        stateUntil: now + tuning.recoverMs,
       },
       attack: true,
     };

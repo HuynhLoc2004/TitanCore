@@ -25,9 +25,13 @@ import {
 } from '../combatFeel';
 import {
   advanceEnemyBehavior,
-  SPROUT_BEHAVIOR,
   type EnemyBehavior,
 } from '../enemyBehavior';
+import {
+  ENEMY_ARCHETYPES,
+  type EnemyArchetype,
+  type EnemyArchetypeDefinition,
+} from '../enemyArchetypes';
 
 type MetricsCallback = (metrics: WorldRuntimeMetrics) => void;
 type StatusCallback = (status: WorldRuntimeStatus) => void;
@@ -37,8 +41,12 @@ const LOGICAL_HEIGHT = 720;
 const HERO_GROUND_OFFSET = 16;
 const HERO_ATTACK_ANIMATION = 'core-raider-local-attack';
 const SPROUT_IDLE_ANIMATION = 'core-sprout-local-idle';
+const SPROUT_CHARGE_ANIMATION = 'core-sprout-local-charge';
+const SPROUT_ATTACK_ANIMATION = 'core-sprout-local-attack';
+const SPROUT_RECOVER_ANIMATION = 'core-sprout-local-recover';
 const SPROUT_HIT_ANIMATION = 'core-sprout-local-hit';
 const SLASH_ANIMATION = 'core-local-slash';
+const HUNT_TARGET = 6;
 
 type LocalTarget = {
   id: string;
@@ -53,6 +61,8 @@ type LocalTarget = {
   spawnY: number;
   behavior: EnemyBehavior;
   telegraph?: Phaser.GameObjects.Ellipse;
+  archetype: EnemyArchetype;
+  profile: EnemyArchetypeDefinition;
 };
 
 export class LocalWorldScene extends Phaser.Scene {
@@ -79,9 +89,12 @@ export class LocalWorldScene extends Phaser.Scene {
   private previousActions = new Set<InputAction>();
   private readonly cooldownReadyAt = new Map<InputAction, number>();
   private actionLockedUntil = 0;
+  private movementImpulseX = 0;
+  private movementImpulseUntil = 0;
   private combatHud?: Phaser.GameObjects.Text;
   private playerHp = 100;
   private playerInvulnerableUntil = 0;
+  private huntKills = 0;
   private readonly targets: LocalTarget[] = [];
   private foregroundMist?: Phaser.GameObjects.Container;
   private windRings: Array<{
@@ -130,6 +143,7 @@ export class LocalWorldScene extends Phaser.Scene {
         );
         this.physics.add.existing(this.heroAnchor);
         const body = this.heroAnchor.body as Phaser.Physics.Arcade.Body;
+        body.setSize(42, 22);
         body.setCollideWorldBounds(true);
         this.heroShadow = this.add
           .ellipse(entity.x, entity.y + 3, 76, 24, 0x06101c, 0.34)
@@ -144,10 +158,13 @@ export class LocalWorldScene extends Phaser.Scene {
           .setDepth(1000 + entity.y);
         this.heroBaseScale = entity.scale;
       } else {
+        const archetype = entity.behaviorProfile as EnemyArchetype;
+        const profile = ENEMY_ARCHETYPES[archetype];
         const sprite = this.add
           .sprite(entity.x, entity.y, entity.assetKey, entity.frame)
           .setOrigin(0.5, 1)
           .setScale(entity.scale)
+          .setTint(profile.tint)
           .setDepth(1000 + entity.y);
         const hpBack = this.add
           .rectangle(entity.x, entity.y - 104, 72, 8, 0x08101f, 0.9)
@@ -161,8 +178,8 @@ export class LocalWorldScene extends Phaser.Scene {
           sprite,
           hpBack,
           hpFill,
-          hp: 100,
-          maxHp: 100,
+          hp: profile.maxHp,
+          maxHp: profile.maxHp,
           baseScale: entity.scale,
           respawnAt: 0,
           spawnX: entity.x,
@@ -172,6 +189,8 @@ export class LocalWorldScene extends Phaser.Scene {
             stateUntil: 0,
             patrolDirection: entity.frame % 2 === 0 ? 1 : -1,
           },
+          archetype,
+          profile,
         });
       }
     });
@@ -259,8 +278,12 @@ export class LocalWorldScene extends Phaser.Scene {
     const dodgeStarted = dodgePressed && !this.dodgeWasPressed;
     this.dodgeWasPressed = dodgePressed;
     const body = this.heroAnchor.body as Phaser.Physics.Arcade.Body;
+    const impulseX = this.simulationTime < this.movementImpulseUntil
+      ? this.movementImpulseX
+      : 0;
+    if (impulseX === 0) this.movementImpulseX = 0;
     body.setVelocity(
-      input.moveX * manifest.navigation.moveSpeed,
+      input.moveX * manifest.navigation.moveSpeed + impulseX,
       input.moveY * manifest.navigation.moveSpeed,
     );
     if (input.moveX !== 0) this.heroVisual.setFlipX(input.moveX < 0);
@@ -316,6 +339,11 @@ export class LocalWorldScene extends Phaser.Scene {
     this.cooldownReadyAt.set(skill.action, this.simulationTime + skill.cooldownMs);
     this.actionLockedUntil = this.simulationTime + (skill.area ? 380 : 300);
     this.heroVisual.play(HERO_ATTACK_ANIMATION, true);
+    const facing = this.heroVisual.flipX ? -1 : 1;
+    if (skill.action === 'SKILL_1' && this.heroAnchor) {
+      this.movementImpulseX = facing * 410;
+      this.movementImpulseUntil = this.simulationTime + 110;
+    }
     this.spawnSkillEffect(skill);
     const selected = selectTargets(
       { x: this.heroAnchor.x, y: this.heroAnchor.y },
@@ -327,6 +355,7 @@ export class LocalWorldScene extends Phaser.Scene {
       })),
       skill.range,
       skill.area,
+      facing,
     );
     selected.forEach(({ id }) => {
       const target = this.targets.find((candidate) => candidate.id === id);
@@ -351,27 +380,39 @@ export class LocalWorldScene extends Phaser.Scene {
         this.simulationTime,
         distanceToHero,
         distanceFromSpawn,
+        target.profile.behavior,
       );
       const previousState = target.behavior.state;
       target.behavior = result.behavior;
       if (target.behavior.state === 'PATROL') {
         target.sprite.x += target.behavior.patrolDirection
-          * SPROUT_BEHAVIOR.patrolSpeed * deltaSeconds;
+          * target.profile.behavior.patrolSpeed * deltaSeconds;
         target.sprite.setFlipX(target.behavior.patrolDirection < 0);
       } else if (target.behavior.state === 'CHASE' && distanceToHero > 0) {
-        target.sprite.x += (dx / distanceToHero) * SPROUT_BEHAVIOR.chaseSpeed * deltaSeconds;
-        target.sprite.y += (dy / distanceToHero) * SPROUT_BEHAVIOR.chaseSpeed * deltaSeconds;
+        target.sprite.x += (dx / distanceToHero)
+          * target.profile.behavior.chaseSpeed * deltaSeconds;
+        target.sprite.y += (dy / distanceToHero)
+          * target.profile.behavior.chaseSpeed * deltaSeconds;
         target.sprite.setFlipX(dx < 0);
       }
       if (target.behavior.state === 'TELEGRAPH' && previousState !== 'TELEGRAPH') {
+        target.sprite.play(SPROUT_CHARGE_ANIMATION, true);
         this.showEnemyTelegraph(target);
       }
       if (result.attack) {
+        target.sprite.play(SPROUT_ATTACK_ANIMATION, true);
         target.telegraph?.destroy();
         target.telegraph = undefined;
-        if (distanceToHero <= SPROUT_BEHAVIOR.attackRange + 18) {
+        if (distanceToHero <= target.profile.behavior.attackRange + 18) {
           this.applyPlayerHit(target);
         }
+        this.time.delayedCall(190, () => {
+          if (target.behavior.state === 'RECOVER' && target.hp > 0) {
+            target.sprite.play(SPROUT_RECOVER_ANIMATION, true);
+          }
+        });
+      } else if (previousState === 'RECOVER' && target.behavior.state === 'CHASE') {
+        target.sprite.play(SPROUT_IDLE_ANIMATION, true);
       }
     });
   }
@@ -380,7 +421,14 @@ export class LocalWorldScene extends Phaser.Scene {
     target.telegraph?.destroy();
     const reducedMotion = this.registry.get('reducedMotion') === true;
     target.telegraph = this.add
-      .ellipse(target.sprite.x, target.sprite.y + 6, 128, 52, 0xff526e, 0.18)
+      .ellipse(
+        target.sprite.x,
+        target.sprite.y + 6,
+        Math.min(290, target.profile.behavior.attackRange * 1.25),
+        Math.min(94, target.profile.behavior.attackRange * 0.48),
+        0xff526e,
+        0.18,
+      )
       .setStrokeStyle(4, 0xff8b57, 0.92)
       .setDepth(940 + target.sprite.y);
     this.tweens.add({
@@ -390,17 +438,18 @@ export class LocalWorldScene extends Phaser.Scene {
       alpha: reducedMotion ? 0.5 : 0.82,
       yoyo: true,
       repeat: reducedMotion ? 0 : 2,
-      duration: reducedMotion ? SPROUT_BEHAVIOR.telegraphMs : 210,
+      duration: reducedMotion ? target.profile.behavior.telegraphMs : 210,
     });
   }
 
   private applyPlayerHit(target: LocalTarget) {
     if (!this.heroAnchor || !this.heroVisual
       || this.simulationTime < this.playerInvulnerableUntil) return;
-    this.playerHp = Math.max(0, this.playerHp - SPROUT_BEHAVIOR.damage);
+    this.playerHp = Math.max(0, this.playerHp - target.profile.damage);
     this.playerInvulnerableUntil = this.simulationTime + 720;
     const direction = Math.sign(this.heroAnchor.x - target.sprite.x) || 1;
-    this.heroAnchor.x = Phaser.Math.Clamp(this.heroAnchor.x + direction * 34, 0, 5120);
+    this.movementImpulseX = direction * 330;
+    this.movementImpulseUntil = this.simulationTime + 125;
     this.heroVisual.setTintFill(0xff8c93);
     this.time.delayedCall(120, () => this.heroVisual?.clearTint());
     this.cameras.main.shake(
@@ -449,13 +498,14 @@ export class LocalWorldScene extends Phaser.Scene {
   }
 
   private applyLocalHit(target: LocalTarget, skill: CombatFeelSkill) {
+    const wasAlive = target.hp > 0;
     target.hp = Math.max(0, target.hp - skill.damage);
     target.sprite
       .setTintFill(0xffffff)
       .play(SPROUT_HIT_ANIMATION, true);
     this.time.delayedCall(95, () => {
       if (!target.sprite.active) return;
-      target.sprite.clearTint();
+      target.sprite.setTint(target.profile.tint);
       if (target.hp > 0) target.sprite.play(SPROUT_IDLE_ANIMATION, true);
     });
     const damageText = this.add
@@ -477,7 +527,16 @@ export class LocalWorldScene extends Phaser.Scene {
       ease: 'Cubic.easeOut',
       onComplete: () => damageText.destroy(),
     });
+    if (this.heroAnchor) {
+      const push = Math.sign(target.sprite.x - this.heroAnchor.x) || 1;
+      target.sprite.x += push * (skill.area ? 10 : 18);
+    }
+    this.cameras.main.shake(
+      this.registry.get('reducedMotion') === true ? 25 : 55,
+      this.registry.get('reducedMotion') === true ? 0.0004 : 0.0011,
+    );
     if (target.hp === 0) {
+      if (wasAlive) this.huntKills = Math.min(HUNT_TARGET, this.huntKills + 1);
       target.respawnAt = this.simulationTime + 2600;
       target.behavior = { ...target.behavior, state: 'DEFEATED' };
       target.telegraph?.destroy();
@@ -498,7 +557,7 @@ export class LocalWorldScene extends Phaser.Scene {
         target.behavior = { state: 'PATROL', stateUntil: 0, patrolDirection: 1 };
         target.sprite
           .setVisible(true)
-          .clearTint()
+          .setTint(target.profile.tint)
           .play(SPROUT_IDLE_ANIMATION, true);
         target.hpBack.setVisible(true);
         target.hpFill.setVisible(true);
@@ -509,8 +568,20 @@ export class LocalWorldScene extends Phaser.Scene {
         manifest.navigation.minY,
         manifest.navigation.maxY,
       );
+      const reducedMotion = this.registry.get('reducedMotion') === true;
+      const motionAmount = reducedMotion ? 0 : target.behavior.state === 'CHASE' ? 0.035 : 0.018;
+      const pulse = Math.sin(
+        this.simulationTime / (target.behavior.state === 'CHASE' ? 90 : 180)
+          + target.spawnX * 0.01,
+      ) * motionAmount;
+      const anticipation = target.behavior.state === 'TELEGRAPH'
+        ? Math.sin(this.simulationTime / 75) * (reducedMotion ? 0.015 : 0.055)
+        : 0;
       target.sprite
-        .setScale(target.baseScale * scale)
+        .setScale(
+          target.baseScale * scale * (1 + pulse + anticipation),
+          target.baseScale * scale * (1 - pulse * 0.65 - anticipation * 0.4),
+        )
         .setDepth(1000 + target.sprite.y);
       target.hpBack
         .setPosition(target.sprite.x, target.sprite.y - 104 * scale)
@@ -530,7 +601,10 @@ export class LocalWorldScene extends Phaser.Scene {
         );
         return remaining === 0 ? `${skill.label} READY` : `${skill.label} ${(remaining / 1000).toFixed(1)}`;
       }).join('  |  ');
-      this.combatHud.setText(`HP ${this.playerHp}/100  |  ${skills}`);
+      const objective = this.huntKills >= HUNT_TARGET
+        ? 'CORE GATE CHARGED'
+        : `HUNT ${this.huntKills}/${HUNT_TARGET}`;
+      this.combatHud.setText(`${objective}  |  HP ${this.playerHp}/100  |  ${skills}`);
     }
   }
 
@@ -583,6 +657,30 @@ export class LocalWorldScene extends Phaser.Scene {
         repeat: 0,
       });
     }
+    if (!this.anims.exists(SPROUT_CHARGE_ANIMATION)) {
+      this.anims.create({
+        key: SPROUT_CHARGE_ANIMATION,
+        frames: [{ key: 'core-sprout', frame: 4 }],
+        frameRate: 1,
+        repeat: -1,
+      });
+    }
+    if (!this.anims.exists(SPROUT_ATTACK_ANIMATION)) {
+      this.anims.create({
+        key: SPROUT_ATTACK_ANIMATION,
+        frames: [{ key: 'core-sprout', frame: 5 }],
+        frameRate: 1,
+        repeat: 0,
+      });
+    }
+    if (!this.anims.exists(SPROUT_RECOVER_ANIMATION)) {
+      this.anims.create({
+        key: SPROUT_RECOVER_ANIMATION,
+        frames: [{ key: 'core-sprout', frame: 7 }],
+        frameRate: 1,
+        repeat: -1,
+      });
+    }
     this.targets.forEach((target) => target.sprite.play(SPROUT_IDLE_ANIMATION, true));
   }
 
@@ -628,6 +726,8 @@ export class LocalWorldScene extends Phaser.Scene {
   }
 
   private createTraversalGeometry(manifest: WorldManifest) {
+    const showCollisionGeometry = new URLSearchParams(window.location.search)
+      .get('collisionDebug') === '1';
     manifest.collision.forEach((definition) => {
       const obstacle = this.add.zone(
         definition.x,
@@ -637,6 +737,19 @@ export class LocalWorldScene extends Phaser.Scene {
       );
       this.physics.add.existing(obstacle, true);
       if (this.heroAnchor) this.physics.add.collider(this.heroAnchor, obstacle);
+      if (showCollisionGeometry) {
+        this.add
+          .rectangle(
+            definition.x,
+            definition.y,
+            definition.width,
+            definition.height,
+            0xff4f78,
+            0.16,
+          )
+          .setStrokeStyle(2, 0xff8ca4, 0.9)
+          .setDepth(4900);
+      }
     });
     manifest.elevationZones.forEach((zone) => {
       const ring = this.add
@@ -734,9 +847,12 @@ export class LocalWorldScene extends Phaser.Scene {
     this.previousActions.clear();
     this.cooldownReadyAt.clear();
     this.actionLockedUntil = 0;
+    this.movementImpulseX = 0;
+    this.movementImpulseUntil = 0;
     this.combatHud = undefined;
     this.playerHp = 100;
     this.playerInvulnerableUntil = 0;
+    this.huntKills = 0;
     this.targets.forEach((target) => target.telegraph?.destroy());
     this.targets.length = 0;
     this.elevation = 0;
